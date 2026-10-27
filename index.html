@@ -20,10 +20,10 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
+    const {useState, useEffect, useMemo} = React;
 
     // Helper Component for Lucide Icons
-    const Icon = ({ name, className = "w-5 h-5" }) => {
+    const Icon = ({name, className = "w-5 h-5"}) => {
       const iconRef = React.useRef(null);
 
       useEffect(() => {
@@ -43,12 +43,12 @@
 
     // --- ACTIVITIES DEFINITION ---
     const AVAILABLE_ACTIVITIES = [
-      { id: 'hike', name: 'Hiking', iconName: 'Mountain', desc: 'Trails, elevation, and nature walks' },
-      { id: 'biking', name: 'Mountain Biking', iconName: 'Bike', desc: 'Singletrack, dirt roads, or trails' },
-      { id: 'swimming', name: 'Swimming', iconName: 'Waves', desc: 'Lakes, oceans, or pools' },
-      { id: 'camping', name: 'Camping', iconName: 'Tent', desc: 'Overnight tent or wilderness stay' },
-      { id: 'trailrunning', name: 'Trail Running', iconName: 'Footprints', desc: 'Off-road running & rugged terrain' },
-      { id: 'sightseeing', name: 'Sightseeing', iconName: 'Camera', desc: 'Town exploration, light walking' },
+      {id: 'hike', name: 'Hiking', iconName: 'Mountain', desc: 'Trails, elevation, and nature walks'},
+      {id: 'biking', name: 'Mountain Biking', iconName: 'Bike', desc: 'Singletrack, dirt roads, or trails'},
+      {id: 'swimming', name: 'Swimming', iconName: 'Waves', desc: 'Lakes, oceans, or pools'},
+      {id: 'camping', name: 'Camping', iconName: 'Tent', desc: 'Overnight tent or wilderness stay'},
+      {id: 'trailrunning', name: 'Trail Running', iconName: 'Footprints', desc: 'Off-road running & rugged terrain'},
+      {id: 'sightseeing', name: 'Sightseeing', iconName: 'Camera', desc: 'Town exploration, light walking'},
     ];
 
     function App() {
@@ -59,9 +59,9 @@
       });
 
       const [locations, setLocations] = useState([
-        { id: '1', name: 'Yosemite National Park', days: 3 },
-        { id: '2', name: '', days: 2 },
-        { id: '3', name: '', days: 1 }
+        {id: '1', name: 'Yosemite National Park', days: 3},
+        {id: '2', name: '', days: 2},
+        {id: '3', name: '', days: 1}
       ]);
 
       const [gender, setGender] = useState('male');
@@ -113,7 +113,7 @@
             const geoData = await geoRes.json();
 
             if (geoData.results && geoData.results.length > 0) {
-              const { latitude, longitude, name, admin1 } = geoData.results[0];
+              const {latitude, longitude, name, admin1} = geoData.results[0];
 
               const weatherRes = await fetch(
                 `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&temperature_unit=fahrenheit&forecast_days=7`
@@ -198,120 +198,120 @@
         const isFemale = gender === 'female';
 
         categories['Clothing & Apparel'].push(
-          { id: 'c1', text: `${shirtsCount}x Breathable T-Shirts / Tops`, note: 'Smart reuse (~1.5 days per shirt)' },
-          { id: 'c2', text: `${pantsCount}x Durable Pants or Shorts`, note: 'Smart reuse (~2.5 days per pair)' },
-          { id: 'c3', text: `${underwearCount}x ${isFemale ? 'Sports Underwear & Bras' : 'Moisture-wicking Underwear'}`, note: 'Fresh pair for each day + 1 backup' },
-          { id: 'c4', text: `${socksCount}x Hiking / Athletic Socks`, note: 'Prevents blisters & keeps feet fresh' },
-          { id: 'c5', text: `1x Sleepwear / Lounge Set`, note: 'Comfortable evening wear' }
+          {id: 'c1', text: `${shirtsCount}x Breathable T-Shirts / Tops`, note: 'Smart reuse (~1.5 days per shirt)'},
+          {id: 'c2', text: `${pantsCount}x Durable Pants or Shorts`, note: 'Smart reuse (~2.5 days per pair)'},
+          {id: 'c3', text: `${underwearCount}x ${isFemale ? 'Sports Underwear & Bras' : 'Moisture-wicking Underwear'}`, note: 'Fresh pair for each day + 1 backup'},
+          {id: 'c4', text: `${socksCount}x Hiking / Athletic Socks`, note: 'Prevents blisters & keeps feet fresh'},
+          {id: 'c5', text: `1x Sleepwear / Lounge Set`, note: 'Comfortable evening wear'}
         );
 
         if (travelerAge < 12) {
-          categories['Clothing & Apparel'].push({ id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)', note: 'For spills and mud' });
+          categories['Clothing & Apparel'].push({id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)', note: 'For spills and mud'});
         }
 
         if (overallHasRain) {
           categories['Weather & Climate Essentials'].push(
-            { id: 'w1', text: 'Waterproof Rain Jacket / Shell', note: 'Forecast predicts rain' },
-            { id: 'w2', text: 'Waterproof Pack Cover or Dry Bags', note: 'Protect electronics and gear' }
+            {id: 'w1', text: 'Waterproof Rain Jacket / Shell', note: 'Forecast predicts rain'},
+            {id: 'w2', text: 'Waterproof Pack Cover or Dry Bags', note: 'Protect electronics and gear'}
           );
         }
 
         if (overallIsCold) {
           categories['Weather & Climate Essentials'].push(
-            { id: 'w3', text: 'Insulated Fleece or Down Jacket', note: 'Lows expected under 50°F / 10°C' },
-            { id: 'w4', text: 'Thermal Base Layer (Top & Bottom)', note: 'For chilly mornings/nights' },
-            { id: 'w5', text: 'Beanie / Warm Hat & Gloves', note: 'Retain body heat' }
+            {id: 'w3', text: 'Insulated Fleece or Down Jacket', note: 'Lows expected under 50°F / 10°C'},
+            {id: 'w4', text: 'Thermal Base Layer (Top & Bottom)', note: 'For chilly mornings/nights'},
+            {id: 'w5', text: 'Beanie / Warm Hat & Gloves', note: 'Retain body heat'}
           );
         }
 
         if (overallIsHot || selectedActivities.includes('swimming') || selectedActivities.includes('hike')) {
           categories['Weather & Climate Essentials'].push(
-            { id: 'w6', text: 'UV Protection Sunglasses & Wide-Brim Hat', note: 'Sun defense' },
-            { id: 'w7', text: 'SPF 50 Broad-Spectrum Sunscreen & Lip Balm', note: 'Apply every 2 hours outdoors' }
+            {id: 'w6', text: 'UV Protection Sunglasses & Wide-Brim Hat', note: 'Sun defense'},
+            {id: 'w7', text: 'SPF 50 Broad-Spectrum Sunscreen & Lip Balm', note: 'Apply every 2 hours outdoors'}
           );
         }
 
-        categories['Weather & Climate Essentials'].push({ id: 'w8', text: 'Light Windbreaker or Layering Hoodie', note: 'Versatile outerwear' });
+        categories['Weather & Climate Essentials'].push({id: 'w8', text: 'Light Windbreaker or Layering Hoodie', note: 'Versatile outerwear'});
 
         if (selectedActivities.includes('hike')) {
           categories['Activity Gear'].push(
-            { id: 'a_h1', text: 'Sturdy Hiking Boots or Trail Shoes', note: 'Broken-in for comfort' },
-            { id: 'a_h2', text: 'Daypack (20L - 30L)', note: 'To carry water, snacks, layers' },
-            { id: 'a_h3', text: 'Reusable Water Bottles / Hydration Reservoir (2L+)', note: 'Stay hydrated on trail' },
-            { id: 'a_h4', text: 'Trail Snacks (Energy Bars, Trail Mix)', note: 'High calorie sustenance' }
+            {id: 'a_h1', text: 'Sturdy Hiking Boots or Trail Shoes', note: 'Broken-in for comfort'},
+            {id: 'a_h2', text: 'Daypack (20L - 30L)', note: 'To carry water, snacks, layers'},
+            {id: 'a_h3', text: 'Reusable Water Bottles / Hydration Reservoir (2L+)', note: 'Stay hydrated on trail'},
+            {id: 'a_h4', text: 'Trail Snacks (Energy Bars, Trail Mix)', note: 'High calorie sustenance'}
           );
           if (travelerAge > 50) {
-            categories['Activity Gear'].push({ id: 'a_h5', text: 'Adjustable Trekking Poles', note: 'Reduces knee joint stress' });
+            categories['Activity Gear'].push({id: 'a_h5', text: 'Adjustable Trekking Poles', note: 'Reduces knee joint stress'});
           }
         }
 
         if (selectedActivities.includes('biking')) {
           categories['Activity Gear'].push(
-            { id: 'a_b1', text: 'Biking Helmet', note: 'Safety mandatory' },
-            { id: 'a_b2', text: 'Padded Bike Shorts / Chamois', note: 'Crucial for saddle comfort' },
-            { id: 'a_b3', text: 'Cycling Gloves & Eye Protection', note: 'Grip and debris defense' },
-            { id: 'a_b4', text: 'Bike Multi-tool, Spare Tube & Compact Pump', note: 'Emergency roadside repair' }
+            {id: 'a_b1', text: 'Biking Helmet', note: 'Safety mandatory'},
+            {id: 'a_b2', text: 'Padded Bike Shorts / Chamois', note: 'Crucial for saddle comfort'},
+            {id: 'a_b3', text: 'Cycling Gloves & Eye Protection', note: 'Grip and debris defense'},
+            {id: 'a_b4', text: 'Bike Multi-tool, Spare Tube & Compact Pump', note: 'Emergency roadside repair'}
           );
         }
 
         if (selectedActivities.includes('swimming')) {
           categories['Activity Gear'].push(
-            { id: 'a_s1', text: `1-2x Swimsuit / Trunks`, note: 'Quick-dry fabric preferred' },
-            { id: 'a_s2', text: 'Microfiber Quick-Dry Towel', note: 'Packs small, dries fast' },
-            { id: 'a_s3', text: 'Water Shoes or Sandals / Flip-flops', note: 'Protect feet on rocky shores' },
-            { id: 'a_s4', text: 'Swim Goggles & Wet Bag for Damp Clothes', note: 'Keeps main pack dry' }
+            {id: 'a_s1', text: `1-2x Swimsuit / Trunks`, note: 'Quick-dry fabric preferred'},
+            {id: 'a_s2', text: 'Microfiber Quick-Dry Towel', note: 'Packs small, dries fast'},
+            {id: 'a_s3', text: 'Water Shoes or Sandals / Flip-flops', note: 'Protect feet on rocky shores'},
+            {id: 'a_s4', text: 'Swim Goggles & Wet Bag for Damp Clothes', note: 'Keeps main pack dry'}
           );
         }
 
         if (selectedActivities.includes('camping')) {
           categories['Activity Gear'].push(
-            { id: 'a_c1', text: 'Tent with Rainfly & Footprint', note: 'Wilderness shelter' },
-            { id: 'a_c2', text: 'Sleeping Bag & Insulated Sleeping Pad', note: 'Rated for local temperatures' },
-            { id: 'a_c3', text: 'Headlamp with Extra Batteries', note: 'Hands-free night illumination' },
-            { id: 'a_c4', text: 'Camp Stove, Fuel & Cooking Mess Kit', note: 'Hot meals and coffee' }
+            {id: 'a_c1', text: 'Tent with Rainfly & Footprint', note: 'Wilderness shelter'},
+            {id: 'a_c2', text: 'Sleeping Bag & Insulated Sleeping Pad', note: 'Rated for local temperatures'},
+            {id: 'a_c3', text: 'Headlamp with Extra Batteries', note: 'Hands-free night illumination'},
+            {id: 'a_c4', text: 'Camp Stove, Fuel & Cooking Mess Kit', note: 'Hot meals and coffee'}
           );
         }
 
         if (selectedActivities.includes('trailrunning')) {
           categories['Activity Gear'].push(
-            { id: 'a_tr1', text: 'Trail Running Shoes with Aggressive Tread', note: 'Traction on dirt/rocks' },
-            { id: 'a_tr2', text: 'Running Hydration Vest & Soft Flasks', note: 'Bounce-free water storage' },
-            { id: 'a_tr3', text: 'Anti-Chafing Body Glide', note: 'Comfort on long runs' }
+            {id: 'a_tr1', text: 'Trail Running Shoes with Aggressive Tread', note: 'Traction on dirt/rocks'},
+            {id: 'a_tr2', text: 'Running Hydration Vest & Soft Flasks', note: 'Bounce-free water storage'},
+            {id: 'a_tr3', text: 'Anti-Chafing Body Glide', note: 'Comfort on long runs'}
           );
         }
 
         if (selectedActivities.includes('sightseeing')) {
           categories['Activity Gear'].push(
-            { id: 'a_sg1', text: 'Comfortable City Walking Shoes', note: 'For paved paths and pavement' },
-            { id: 'a_sg2', text: 'Compact Shoulder Crossbody or Tote Bag', note: 'Secure personal items' }
+            {id: 'a_sg1', text: 'Comfortable City Walking Shoes', note: 'For paved paths and pavement'},
+            {id: 'a_sg2', text: 'Compact Shoulder Crossbody or Tote Bag', note: 'Secure personal items'}
           );
         }
 
         categories['Toiletries & Personal Care'].push(
-          { id: 't1', text: 'Travel-size Toothbrush, Toothpaste & Floss', note: 'Daily hygiene' },
-          { id: 't2', text: 'Biodegradable Wilderness Soap / Bodywash', note: 'Leave No Trace friendly' },
-          { id: 't3', text: 'Insect Repellent (DEET / Picaridin)', note: 'Protection against mosquitoes & ticks' },
-          { id: 't4', text: 'Adventure First Aid Kit (Bandages, Blister pads, Antiseptic, Ibuprofen)', note: 'Essential field care' },
-          { id: 't5', text: 'Personal Prescription Medications & Vitamins', note: `${days} days supply + 2 extra days` }
+          {id: 't1', text: 'Travel-size Toothbrush, Toothpaste & Floss', note: 'Daily hygiene'},
+          {id: 't2', text: 'Biodegradable Wilderness Soap / Bodywash', note: 'Leave No Trace friendly'},
+          {id: 't3', text: 'Insect Repellent (DEET / Picaridin)', note: 'Protection against mosquitoes & ticks'},
+          {id: 't4', text: 'Adventure First Aid Kit (Bandages, Blister pads, Antiseptic, Ibuprofen)', note: 'Essential field care'},
+          {id: 't5', text: 'Personal Prescription Medications & Vitamins', note: `${days} days supply + 2 extra days`}
         );
 
         if (isFemale) {
-          categories['Toiletries & Personal Care'].push({ id: 't6', text: 'Feminine Hygiene Products', note: 'Personal care' });
+          categories['Toiletries & Personal Care'].push({id: 't6', text: 'Feminine Hygiene Products', note: 'Personal care'});
         }
 
         categories['General & Logistics'].push(
-          { id: 'g1', text: 'Government ID, Credit Cards & Cash', note: 'Secure wallet pouch' },
-          { id: 'g2', text: 'Smartphone, Portable Power Bank & Charging Cables', note: 'Navigation & emergency contact' },
-          { id: 'g3', text: 'Offline Map App Download / Physical Topo Map', note: 'In case of lost cellular coverage' },
-          { id: 'g4', text: 'Reusable Trash Bags', note: 'Pack out all trash and food scraps' },
-          { id: 'g5', text: 'Multi-tool or Pocket Knife', note: 'Versatile field utility' }
+          {id: 'g1', text: 'Government ID, Credit Cards & Cash', note: 'Secure wallet pouch'},
+          {id: 'g2', text: 'Smartphone, Portable Power Bank & Charging Cables', note: 'Navigation & emergency contact'},
+          {id: 'g3', text: 'Offline Map App Download / Physical Topo Map', note: 'In case of lost cellular coverage'},
+          {id: 'g4', text: 'Reusable Trash Bags', note: 'Pack out all trash and food scraps'},
+          {id: 'g5', text: 'Multi-tool or Pocket Knife', note: 'Versatile field utility'}
         );
 
         setGeneratedList(categories);
         setCheckedItems({});
 
         setTimeout(() => {
-          document.getElementById('packing-results-section')?.scrollIntoView({ behavior: 'smooth' });
+          document.getElementById('packing-results-section')?.scrollIntoView({behavior: 'smooth'});
         }, 150);
       };
 
@@ -364,9 +364,12 @@
           <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-lg">
-                  <Icon name="Compass" className="w-6 h-6 text-slate-900" />
-                </div>
+
+                <img
+                  src="PocketPath.jpeg"
+                  alt="PocketPath Logo"
+                  className="h-10 w-10 object-contain rounded-xl"
+                />
                 <div>
                   <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
                     PocketPath <span className="text-emerald-400 font-normal text-sm px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-800/50">Pack AI</span>
@@ -452,17 +455,17 @@
                     </label>
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { id: 'male', label: 'Male' },
-                        { id: 'female', label: 'Female' },
-                        { id: 'other', label: 'Unisex' }
+                        {id: 'male', label: 'Male'},
+                        {id: 'female', label: 'Female'},
+                        {id: 'other', label: 'Unisex'}
                       ].map(g => (
                         <button
                           key={g.id}
                           type="button"
                           onClick={() => setGender(g.id)}
                           className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${gender === g.id
-                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                              : 'bg-slate-900/60 border-slate-700 text-slate-400'
+                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                            : 'bg-slate-900/60 border-slate-700 text-slate-400'
                             }`}
                         >
                           {g.label}
@@ -508,8 +511,8 @@
                         type="button"
                         onClick={() => toggleActivity(act.id)}
                         className={`flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all ${isSelected
-                            ? 'bg-emerald-950/40 border-emerald-500/80 ring-1 ring-emerald-500/50'
-                            : 'bg-slate-900/60 border-slate-700/80'
+                          ? 'bg-emerald-950/40 border-emerald-500/80 ring-1 ring-emerald-500/50'
+                          : 'bg-slate-900/60 border-slate-700/80'
                           }`}
                       >
                         <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400'}`}>
@@ -583,7 +586,7 @@
                       <span className="font-bold text-emerald-400">{checkedItemsCount} of {totalItemsCount} items packed ({packedPercentage}%)</span>
                     </div>
                     <div className="w-full bg-slate-900 rounded-full h-3 p-0.5 border border-slate-700">
-                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{ width: `${packedPercentage}%` }} />
+                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{width: `${packedPercentage}%`}} />
                     </div>
                   </div>
                 </div>
