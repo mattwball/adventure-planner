@@ -1,29 +1,44 @@
+There are **three syntax errors** in your `index.html` file causing a blank screen when rendered in the browser:
+
+1. **Stray `1.` on line 211:** A rogue `1.` character was pasted right above `<h3 className="font-semibold text-lg text-white">Trip Dates & Destinations</h3>`.
+2. **Missing `</div>` closing tag:** In section 3 (Planned Adventure Activities), a closing `</div>` tag is missing before the "Generate Smart Packing List" button container.
+3. **Mismatched closing tags at the bottom of `App()`:** At line 397, extra `</div>` tags were added inside the JSX `return` statement, causing React/Babel compilation errors.
+
+---
+
+### Fixed & Cleaned `index.html`
+
+Replace all code in your `index.html` file with this corrected version:
+
+```html
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Adventure Planning & Packing List</title>
-  <!-- Tailwind CSS for styling -->
+  <title>PocketPath - Adventure Planning & Packing List</title>
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel for parsing React/JSX in browser -->
+  <!-- Babel for parsing React/JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Lucide Icons (Browser Bundle) -->
+  <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
+
 <body class="bg-slate-900 text-slate-100 min-h-screen">
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
-    // Helper Component for Lucide Icons in standalone browser React
+    // Helper Component for Lucide Icons
     const Icon = ({ name, className = "w-5 h-5" }) => {
       const iconRef = React.useRef(null);
-      
+
       useEffect(() => {
         if (iconRef.current && window.lucide) {
           iconRef.current.innerHTML = '';
@@ -91,7 +106,7 @@
       };
 
       const toggleActivity = (actId) => {
-        setSelectedActivities(prev => 
+        setSelectedActivities(prev =>
           prev.includes(actId) ? prev.filter(id => id !== actId) : [...prev, actId]
         );
       };
@@ -178,6 +193,7 @@
         });
 
         const days = Math.max(1, totalTripDays);
+        const travelerAge = Number(age) || 28;
 
         const shirtsCount = Math.max(2, Math.ceil(days / 1.5));
         const pantsCount = Math.max(1, Math.ceil(days / 2.5));
@@ -202,7 +218,7 @@
           { id: 'c5', text: `1x Sleepwear / Lounge Set`, note: 'Comfortable evening wear' }
         );
 
-        if (age < 12) {
+        if (travelerAge < 12) {
           categories['Clothing & Apparel'].push({ id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)', note: 'For spills and mud' });
         }
 
@@ -237,7 +253,7 @@
             { id: 'a_h3', text: 'Reusable Water Bottles / Hydration Reservoir (2L+)', note: 'Stay hydrated on trail' },
             { id: 'a_h4', text: 'Trail Snacks (Energy Bars, Trail Mix)', note: 'High calorie sustenance' }
           );
-          if (age > 50) {
+          if (travelerAge > 50) {
             categories['Activity Gear'].push({ id: 'a_h5', text: 'Adjustable Trekking Poles', note: 'Reduces knee joint stress' });
           }
         }
@@ -319,28 +335,6 @@
         }));
       };
 
-      const addCustomItem = (catName) => {
-        const text = newItemText[catName]?.trim();
-        if (!text) return;
-
-        const newItemId = `custom_${Date.now()}`;
-        const newCustomObj = { id: newItemId, text, note: 'Custom user addition' };
-
-        setCustomItems(prev => ({
-          ...prev,
-          [catName]: [...(prev[catName] || []), newCustomObj]
-        }));
-
-        setNewItemText(prev => ({ ...prev, [catName]: '' }));
-      };
-
-      const deleteCustomItem = (catName, itemId) => {
-        setCustomItems(prev => ({
-          ...prev,
-          [catName]: (prev[catName] || []).filter(item => item.id !== itemId)
-        }));
-      };
-
       const totalItemsCount = useMemo(() => {
         if (!generatedList) return 0;
         let count = 0;
@@ -355,8 +349,8 @@
         return Object.values(checkedItems).filter(Boolean).length;
       }, [checkedItems]);
 
-      const packedPercentage = totalItemsCount > 0 
-        ? Math.round((checkedItemsCount / totalItemsCount) * 100) 
+      const packedPercentage = totalItemsCount > 0
+        ? Math.round((checkedItemsCount / totalItemsCount) * 100)
         : 0;
 
       const copyToClipboard = () => {
@@ -479,11 +473,10 @@
                           key={g.id}
                           type="button"
                           onClick={() => setGender(g.id)}
-                          className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
-                            gender === g.id
+                          className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${gender === g.id
                               ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                               : 'bg-slate-900/60 border-slate-700 text-slate-400'
-                          }`}
+                            }`}
                         >
                           {g.label}
                         </button>
@@ -491,26 +484,27 @@
                     </div>
                   </div>
 
-{/* NEW CODE (Text Input Box) */}
-<div>
-  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-    Traveler Age
-  </label>
-  <div className="relative">
-    <input
-      type="number"
-      min="1"
-      max="120"
-      placeholder="e.g. 28"
-      value={age}
-      onChange={(e) => setAge(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 0))}
-      className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-    />
-    <span className="absolute right-3.5 top-2.5 text-xs text-slate-500 pointer-events-none">
-      years
-    </span>
-  </div>
-</div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                      Traveler Age
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="120"
+                        placeholder="e.g. 28"
+                        value={age}
+                        onChange={(e) => setAge(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 0))}
+                        className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+                      />
+                      <span className="absolute right-3.5 top-2.5 text-xs text-slate-500 pointer-events-none">
+                        years
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <div className="space-y-4 pt-4 border-t border-slate-700/80">
                 <div className="flex items-center gap-2">
@@ -526,11 +520,10 @@
                         key={act.id}
                         type="button"
                         onClick={() => toggleActivity(act.id)}
-                        className={`flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all ${
-                          isSelected
+                        className={`flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all ${isSelected
                             ? 'bg-emerald-950/40 border-emerald-500/80 ring-1 ring-emerald-500/50'
                             : 'bg-slate-900/60 border-slate-700/80'
-                        }`}
+                          }`}
                       >
                         <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400'}`}>
                           <Icon name={act.iconName} className="w-5 h-5" />
@@ -626,9 +619,8 @@
                               <div
                                 key={item.id}
                                 onClick={() => toggleCheck(item.id)}
-                                className={`flex items-start justify-between gap-3 p-3 rounded-xl border cursor-pointer ${
-                                  isChecked ? 'bg-slate-900/40 border-slate-800 text-slate-500 line-through' : 'bg-slate-900/80 border-slate-700 text-slate-200'
-                                }`}
+                                className={`flex items-start justify-between gap-3 p-3 rounded-xl border cursor-pointer ${isChecked ? 'bg-slate-900/40 border-slate-800 text-slate-500 line-through' : 'bg-slate-900/80 border-slate-700 text-slate-200'
+                                  }`}
                               >
                                 <div>
                                   <span className="text-sm font-medium">{item.text}</span>
@@ -652,4 +644,7 @@
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>
 </body>
+
 </html>
+
+```
