@@ -198,36 +198,35 @@
         const isFemale = gender === 'female';
 
         categories['Clothing & Apparel'].push(
-          {id: 'c1', text: `${shirtsCount}x Breathable T-Shirts / Tops`, note: 'Smart reuse (~1.5 days per shirt)'},
-          {id: 'c2', text: `${pantsCount}x Durable Pants or Shorts`, note: 'Smart reuse (~2.5 days per pair)'},
-          {id: 'c3', text: `${underwearCount}x ${isFemale ? 'Sports Underwear & Bras' : 'Moisture-wicking Underwear'}`, note: 'Fresh pair for each day + 1 backup'},
-          {id: 'c4', text: `${socksCount}x Hiking / Athletic Socks`, note: 'Prevents blisters & keeps feet fresh'},
-          {id: 'c5', text: `1x Sleepwear / Lounge Set`, note: 'Comfortable evening wear'}
-        );
-
+  { id: 'c1', text: `${shirtsCount}x Shirts` },
+  { id: 'c2', text: `${pantsCount}x Pants / Shorts` },
+  { id: 'c3', text: `${underwearCount}x ${isFemale ? 'Underwear & Bras' : 'Underwear'}` },
+  { id: 'c4', text: `${socksCount}x Socks` },
+  { id: 'c5', text: `1x Sleepwear` }
+);
         if (travelerAge < 12) {
-          categories['Clothing & Apparel'].push({id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)', note: 'For spills and mud'});
+          categories['Clothing & Apparel'].push({id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)'});
         }
 
         if (overallHasRain) {
           categories['Weather & Climate Essentials'].push(
-            {id: 'w1', text: 'Waterproof Rain Jacket / Shell', note: 'Forecast predicts rain'},
-            {id: 'w2', text: 'Waterproof Pack Cover or Dry Bags', note: 'Protect electronics and gear'}
+            {id: 'w1', text: 'Rain Jacket'},
+            {id: 'w2', text: 'Waterproof/Dry Bags'}
           );
         }
 
         if (overallIsCold) {
           categories['Weather & Climate Essentials'].push(
-            {id: 'w3', text: 'Insulated Fleece or Down Jacket', note: 'Lows expected under 50°F / 10°C'},
-            {id: 'w4', text: 'Thermal Base Layer (Top & Bottom)', note: 'For chilly mornings/nights'},
-            {id: 'w5', text: 'Beanie / Warm Hat & Gloves', note: 'Retain body heat'}
+            {id: 'w3', text: 'Warm Jacket', note: 'Lows expected under 50°F / 10°C'},
+            {id: 'w4', text: 'Warm Base Layer?', note: 'For chilly mornings/nights'},
+            {id: 'w5', text: 'Beanie & Gloves'}
           );
         }
 
         if (overallIsHot || selectedActivities.includes('swimming') || selectedActivities.includes('hike')) {
           categories['Weather & Climate Essentials'].push(
-            {id: 'w6', text: 'UV Protection Sunglasses & Wide-Brim Hat', note: 'Sun defense'},
-            {id: 'w7', text: 'SPF 50 Broad-Spectrum Sunscreen & Lip Balm', note: 'Apply every 2 hours outdoors'}
+            {id: 'w6', text: 'Sun defence', note: 'Sunglasses & Hat?'},
+            {id: 'w7', text: 'Sunscreen'}
           );
         }
 
@@ -235,76 +234,76 @@
 
         if (selectedActivities.includes('hike')) {
           categories['Activity Gear'].push(
-            {id: 'a_h1', text: 'Sturdy Hiking Boots or Trail Shoes', note: 'Broken-in for comfort'},
-            {id: 'a_h2', text: 'Daypack (20L - 30L)', note: 'To carry water, snacks, layers'},
-            {id: 'a_h3', text: 'Reusable Water Bottles / Hydration Reservoir (2L+)', note: 'Stay hydrated on trail'},
-            {id: 'a_h4', text: 'Trail Snacks (Energy Bars, Trail Mix)', note: 'High calorie sustenance'}
+            {id: 'a_h1', text: 'Hiking Shoes'},
+            {id: 'a_h2', text: 'BackPack'},
+            {id: 'a_h3', text: 'Water Bottles'},
+            {id: 'a_h4', text: 'Trail Snacks'}
           );
           if (travelerAge > 50) {
-            categories['Activity Gear'].push({id: 'a_h5', text: 'Adjustable Trekking Poles', note: 'Reduces knee joint stress'});
+            categories['Activity Gear'].push({id: 'a_h5', text: 'Trekking Poles?'});
           }
         }
 
         if (selectedActivities.includes('biking')) {
           categories['Activity Gear'].push(
-            {id: 'a_b1', text: 'Biking Helmet', note: 'Safety mandatory'},
-            {id: 'a_b2', text: 'Padded Bike Shorts / Chamois', note: 'Crucial for saddle comfort'},
-            {id: 'a_b3', text: 'Cycling Gloves & Eye Protection', note: 'Grip and debris defense'},
-            {id: 'a_b4', text: 'Bike Multi-tool, Spare Tube & Compact Pump', note: 'Emergency roadside repair'}
+            {id: 'a_b1', text: 'Helmet'},
+            {id: 'a_b2', text: 'Diaper Pants', note: 'mountain biking padded underware'},
+            {id: 'a_b3', text: 'Gloves and Sunglasses'},
+            {id: 'a_b4', text: 'Pump and tools'}
           );
         }
 
         if (selectedActivities.includes('swimming')) {
           categories['Activity Gear'].push(
-            {id: 'a_s1', text: `1-2x Swimsuit / Trunks`, note: 'Quick-dry fabric preferred'},
-            {id: 'a_s2', text: 'Microfiber Quick-Dry Towel', note: 'Packs small, dries fast'},
-            {id: 'a_s3', text: 'Water Shoes or Sandals / Flip-flops', note: 'Protect feet on rocky shores'},
-            {id: 'a_s4', text: 'Swim Goggles & Wet Bag for Damp Clothes', note: 'Keeps main pack dry'}
+            {id: 'a_s1', text: `Swimsuit`},
+            {id: 'a_s2', text: 'Swim Towels'},
+            {id: 'a_s3', text: 'Water Shoes or Sandals'},
+            {id: 'a_s4', text: 'Swim Goggles'}
           );
         }
 
         if (selectedActivities.includes('camping')) {
           categories['Activity Gear'].push(
-            {id: 'a_c1', text: 'Tent with Rainfly & Footprint', note: 'Wilderness shelter'},
-            {id: 'a_c2', text: 'Sleeping Bag & Insulated Sleeping Pad', note: 'Rated for local temperatures'},
-            {id: 'a_c3', text: 'Headlamp with Extra Batteries', note: 'Hands-free night illumination'},
-            {id: 'a_c4', text: 'Camp Stove, Fuel & Cooking Mess Kit', note: 'Hot meals and coffee'}
+            {id: 'a_c1', text: 'Tent'},
+            {id: 'a_c2', text: 'Sleeping Bag & Pad'},
+            {id: 'a_c3', text: 'Headlamp'},
+            {id: 'a_c4', text: 'Camp Stove, Fuel & stuff to eat with'}
           );
         }
 
         if (selectedActivities.includes('trailrunning')) {
           categories['Activity Gear'].push(
-            {id: 'a_tr1', text: 'Trail Running Shoes with Aggressive Tread', note: 'Traction on dirt/rocks'},
-            {id: 'a_tr2', text: 'Running Hydration Vest & Soft Flasks', note: 'Bounce-free water storage'},
-            {id: 'a_tr3', text: 'Anti-Chafing Body Glide', note: 'Comfort on long runs'}
+            {id: 'a_tr1', text: 'Trail Running Shoes'},
+            {id: 'a_tr2', text: 'Hydration Vest'},
+            {id: 'a_tr3', text: 'Anti-Chafing Body Glide'}
           );
         }
 
         if (selectedActivities.includes('sightseeing')) {
           categories['Activity Gear'].push(
-            {id: 'a_sg1', text: 'Comfortable City Walking Shoes', note: 'For paved paths and pavement'},
-            {id: 'a_sg2', text: 'Compact Shoulder Crossbody or Tote Bag', note: 'Secure personal items'}
+            {id: 'a_sg1', text: 'Walking Shoes'},
+            {id: 'a_sg2', text: 'Backpack'}
           );
         }
 
         categories['Toiletries & Personal Care'].push(
-          {id: 't1', text: 'Travel-size Toothbrush, Toothpaste & Floss', note: 'Daily hygiene'},
-          {id: 't2', text: 'Biodegradable Wilderness Soap / Bodywash', note: 'Leave No Trace friendly'},
-          {id: 't3', text: 'Insect Repellent (DEET / Picaridin)', note: 'Protection against mosquitoes & ticks'},
-          {id: 't4', text: 'Adventure First Aid Kit (Bandages, Blister pads, Antiseptic, Ibuprofen)', note: 'Essential field care'},
-          {id: 't5', text: 'Personal Prescription Medications & Vitamins', note: `${days} days supply + 2 extra days`}
+          {id: 't1', text: 'Toothbrush, Toothpaste & Floss'},
+          {id: 't2', text: 'Soap / Bodywash'},
+          {id: 't3', text: 'Insect Repellent'},
+          {id: 't4', text: 'First Aid Stuff (bandaid, Ibuprofen, etc)'},
+          {id: 't5', text: 'Personal Medications'}
         );
 
         if (isFemale) {
-          categories['Toiletries & Personal Care'].push({id: 't6', text: 'Feminine Hygiene Products', note: 'Personal care'});
+          categories['Toiletries & Personal Care'].push({id: 't6', text: 'Feminine Hygiene Products'});
         }
 
         categories['General & Logistics'].push(
-          {id: 'g1', text: 'Government ID, Credit Cards & Cash', note: 'Secure wallet pouch'},
-          {id: 'g2', text: 'Smartphone, Portable Power Bank & Charging Cables', note: 'Navigation & emergency contact'},
-          {id: 'g3', text: 'Offline Map App Download / Physical Topo Map', note: 'In case of lost cellular coverage'},
-          {id: 'g4', text: 'Reusable Trash Bags', note: 'Pack out all trash and food scraps'},
-          {id: 'g5', text: 'Multi-tool or Pocket Knife', note: 'Versatile field utility'}
+          {id: 'g1', text: 'ID, Credit Cards & Cash'},
+          {id: 'g2', text: 'Portable Power Bank & Charging Cables'},
+          {id: 'g3', text: 'Download Offline Map'},
+          {id: 'g4', text: 'Trash Bags'},
+          {id: 'g5', text: 'Multi-tool and/or Pocket Knife'}
         );
 
         setGeneratedList(categories);
