@@ -97,6 +97,55 @@
           prev.includes(actId) ? prev.filter(id => id !== actId) : [...prev, actId]
         );
       };
+      //=========================================================================
+      // 1. Delete an item from any category
+      const handleDeleteItem = (catName, itemId) => {
+        setGeneratedList(prev => ({
+          ...prev,
+          [catName]: prev[catName].filter(item => item.id !== itemId)
+        }));
+      };
+
+      // 2. Add a new custom item to a specific category
+      const handleAddItem = (catName) => {
+        const text = newItemText[catName]?.trim();
+        if (!text) return;
+
+        const newItem = {
+          id: `custom_${Date.now()}`,
+          text: text
+        };
+
+        setGeneratedList(prev => ({
+          ...prev,
+          [catName]: [...prev[catName], newItem]
+        }));
+
+        // Clear input box
+        setNewItemText(prev => ({...prev, [catName]: ''}));
+      };
+
+      // Load saved packing list on initial page load
+      useEffect(() => {
+        const savedList = localStorage.getItem('wayfare_packing_list');
+        if (savedList) {
+          try {
+            setGeneratedList(JSON.parse(savedList));
+          } catch (e) {
+            console.error("Failed to parse saved list", e);
+          }
+        }
+      }, []);
+
+      // Auto-save whenever generatedList changes
+      useEffect(() => {
+        if (generatedList) {
+          localStorage.setItem('wayfare_packing_list', JSON.stringify(generatedList));
+        }
+      }, [generatedList]);
+
+
+      //=========================================================================
 
       // --- OPEN-METEO WEATHER API ---
       const fetchWeatherForLocations = async () => {
@@ -198,12 +247,12 @@
         const isFemale = gender === 'female';
 
         categories['Clothing & Apparel'].push(
-  { id: 'c1', text: `${shirtsCount}x Shirts` },
-  { id: 'c2', text: `${pantsCount}x Pants / Shorts` },
-  { id: 'c3', text: `${underwearCount}x ${isFemale ? 'Underwear & Bras' : 'Underwear'}` },
-  { id: 'c4', text: `${socksCount}x Socks` },
-  { id: 'c5', text: `1x Sleepwear` }
-);
+          {id: 'c1', text: `${shirtsCount}x Shirts`},
+          {id: 'c2', text: `${pantsCount}x Pants / Shorts`},
+          {id: 'c3', text: `${underwearCount}x ${isFemale ? 'Underwear & Bras' : 'Underwear'}`},
+          {id: 'c4', text: `${socksCount}x Socks`},
+          {id: 'c5', text: `1x Sleepwear`}
+        );
         if (travelerAge < 12) {
           categories['Clothing & Apparel'].push({id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)'});
         }
@@ -601,23 +650,59 @@
                     return (
                       <div key={catName} className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-5 space-y-4">
                         <h4 className="font-bold text-slate-200 text-base">{catName}</h4>
+
                         <div className="grid grid-cols-1 gap-2.5">
                           {allItems.map(item => {
                             const isChecked = !!checkedItems[item.id];
                             return (
                               <div
                                 key={item.id}
-                                onClick={() => toggleCheck(item.id)}
-                                className={`flex items-start justify-between gap-3 p-3 rounded-xl border cursor-pointer ${isChecked ? 'bg-slate-900/40 border-slate-800 text-slate-500 line-through' : 'bg-slate-900/80 border-slate-700 text-slate-200'
+                                className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${isChecked
+                                    ? 'bg-slate-900/40 border-slate-800 text-slate-500'
+                                    : 'bg-slate-900/80 border-slate-700 text-slate-200'
                                   }`}
                               >
-                                <div>
-                                  <span className="text-sm font-medium">{item.text}</span>
-                                  {item.note && <p className="text-xs text-slate-400">{item.note}</p>}
+                                {/* Checkbox & Item Text */}
+                                <div
+                                  onClick={() => toggleCheck(item.id)}
+                                  className="flex-1 cursor-pointer flex items-center gap-2"
+                                >
+                                  <span className={`text-sm font-medium ${isChecked ? 'line-through' : ''}`}>
+                                    {item.text}
+                                  </span>
                                 </div>
+
+                                {/* Delete Trash Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteItem(catName, item.id)}
+                                  className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                                  title="Remove item"
+                                >
+                                  <Icon name="Trash2" className="w-4 h-4" />
+                                </button>
                               </div>
                             );
                           })}
+                        </div>
+
+                        {/* Inline "Add Item" Row */}
+                        <div className="flex gap-2 pt-2">
+                          <input
+                            type="text"
+                            placeholder={`+ Add item to ${catName}...`}
+                            value={newItemText[catName] || ''}
+                            onChange={(e) => setNewItemText({...newItemText, [catName]: e.target.value})}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddItem(catName)}
+                            className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddItem(catName)}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs"
+                          >
+                            Add
+                          </button>
                         </div>
                       </div>
                     );
