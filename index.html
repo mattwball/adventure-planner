@@ -14,6 +14,17 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Leaflet (interactive map for picking destinations) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    .pp-stop-marker {
+      background: #10b981; color: #022c22; font-weight: 800; font-size: 13px;
+      width: 28px; height: 28px; border-radius: 9999px; border: 2px solid #ecfdf5;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,.45);
+    }
+  </style>
 </head>
 
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -55,10 +66,213 @@
     // Each person's details drive their packing list (sizes, age-based extras, etc.).
     // Later this can become an onboarding step where any family adds their own people.
     const FAMILY = [
-      {id: 'penny', name: 'Penny', gender: 'female', age: 35},
-      {id: 'leon', name: 'Leon', gender: 'male', age: 35},
-      {id: 'niko', name: 'Niko', gender: 'male', age: 8},
+      {id: 'penny', name: 'Penny', gender: 'female', age: 12},
+      {id: 'leon', name: 'Leon', gender: 'male', age: 9},
+      {id: 'niko', name: 'Niko', gender: 'male', age: 6},
     ];
+
+    // Shorten long place names like "Moab, Grand County, Utah, United States" -> "Moab, Grand County"
+    const shortPlaceName = (displayName = '') => displayName.split(',').slice(0, 2).map(s => s.trim()).join(', ');
+
+    // --- MAP DESTINATION PICKER ---
+    // Search for a place or tap the map to drop a pin; then choose how many nights to stay.
+    // Uses OpenStreetMap tiles and the free Nominatim geocoder.
+    const MapPicker = ({locations, onAdd}) => {
+      const mapEl = React.useRef(null);
+      const mapRef = React.useRef(null);
+      const stopsLayerRef = React.useRef(null);
+      const tempMarkerRef = React.useRef(null);
+      const [query, setQuery] = useState('');
+      const [results, setResults] = useState([]);
+      const [searching, setSearching] = useState(false);
+      const [searchError, setSearchError] = useState('');
+      const [pending, setPending] = useState(null); // {name, lat, lon, loading}
+      const [nights, setNights] = useState(2);
+
+      const showTempMarker = (lat, lon) => {
+        const map = mapRef.current;
+        if (!map) return;
+        if (tempMarkerRef.current) tempMarkerRef.current.remove();
+        tempMarkerRef.current = L.circleMarker([lat, lon], {
+          radius: 10, color: '#fbbf24', weight: 3, fillColor: '#fbbf24', fillOpacity: 0.35
+        }).addTo(map);
+      };
+
+      const clearTempMarker = () => {
+        if (tempMarkerRef.current) {
+          tempMarkerRef.current.remove();
+          tempMarkerRef.current = null;
+        }
+      };
+
+      // Create the map once
+      useEffect(() => {
+        if (!window.L || !mapEl.current || mapRef.current) return;
+        const map = L.map(mapEl.current).setView([39.5, -111.5], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 18,
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        stopsLayerRef.current = L.layerGroup().addTo(map);
+
+        // Drop a pin by tapping the map
+        map.on('click', async (e) => {
+          const {lat, lng} = e.latlng;
+          showTempMarker(lat, lng);
+          setResults([]);
+          setPending({name: 'Dropped pin', lat, lon: lng, loading: true});
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=12&lat=${lat}&lon=${lng}`);
+            const data = await res.json();
+            const name = data.name || shortPlaceName(data.display_name) || 'Dropped pin';
+            setPending(p => (p && p.lat === lat ? {...p, name, loading: false} : p));
+          } catch (err) {
+            setPending(p => (p && p.lat === lat ? {...p, loading: false} : p));
+          }
+        });
+
+        mapRef.current = map;
+        return () => {
+          map.remove();
+          mapRef.current = null;
+        };
+      }, []);
+
+      // Draw numbered markers for each stop
+      useEffect(() => {
+        const map = mapRef.current;
+        const layer = stopsLayerRef.current;
+        if (!map || !layer) return;
+        layer.clearLayers();
+        const pts = [];
+        locations.forEach((loc, idx) => {
+          if (loc.lat == null) return;
+          pts.push([loc.lat, loc.lon]);
+          L.marker([loc.lat, loc.lon], {
+            icon: L.divIcon({className: '', html: `<div class="pp-stop-marker">${idx + 1}</div>`, iconSize: [28, 28], iconAnchor: [14, 14]})
+          }).bindTooltip(`${loc.name} · ${loc.nights} night${loc.nights === 1 ? '' : 's'}`).addTo(layer);
+        });
+        if (pts.length === 1) map.setView(pts[0], Math.max(map.getZoom(), 8));
+        if (pts.length > 1) map.fitBounds(pts, {padding: [40, 40], maxZoom: 10});
+      }, [locations]);
+
+      const runSearch = async (e) => {
+        e?.preventDefault();
+        const q = query.trim();
+        if (!q) return;
+        setSearching(true);
+        setSearchError('');
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          setResults(data);
+          if (data.length === 0) setSearchError('No places found. Try a different name, or tap the map to drop a pin.');
+        } catch (err) {
+          setSearchError('Search is unavailable right now. You can still tap the map to drop a pin.');
+        }
+        setSearching(false);
+      };
+
+      const chooseResult = (r) => {
+        const lat = parseFloat(r.lat);
+        const lon = parseFloat(r.lon);
+        mapRef.current?.setView([lat, lon], 10);
+        showTempMarker(lat, lon);
+        setResults([]);
+        setPending({name: shortPlaceName(r.display_name), lat, lon, loading: false});
+      };
+
+      const confirmStop = () => {
+        if (!pending) return;
+        onAdd({
+          id: `loc_${Date.now()}`,
+          name: pending.name.trim() || 'Dropped pin',
+          lat: pending.lat,
+          lon: pending.lon,
+          nights: Math.max(0, parseInt(nights, 10) || 0)
+        });
+        clearTempMarker();
+        setPending(null);
+        setNights(2);
+        setQuery('');
+      };
+
+      const cancelStop = () => {
+        clearTempMarker();
+        setPending(null);
+      };
+
+      return (
+        <div className="space-y-2">
+          <form onSubmit={runSearch} className="relative flex gap-2">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search a park, town, or campground..."
+              className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+            />
+            <button
+              type="submit"
+              disabled={searching}
+              className="shrink-0 bg-emerald-500/20 border border-emerald-500 text-emerald-300 rounded-xl px-4 text-sm font-semibold disabled:opacity-50"
+            >
+              {searching ? '...' : 'Search'}
+            </button>
+
+            {results.length > 0 && (
+              <ul className="absolute left-0 right-0 top-full mt-1 z-[1100] bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-2xl">
+                {results.map(r => (
+                  <li key={r.place_id}>
+                    <button
+                      type="button"
+                      onClick={() => chooseResult(r)}
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-800 border-b border-slate-800 last:border-0"
+                    >
+                      <span className="font-semibold">{shortPlaceName(r.display_name)}</span>
+                      <span className="block text-xs text-slate-500 truncate">{r.display_name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </form>
+          {searchError && <p className="text-xs text-amber-400">{searchError}</p>}
+
+          <div className="relative">
+            <div ref={mapEl} className="h-72 sm:h-80 w-full rounded-xl border border-slate-700 overflow-hidden z-0" />
+
+            {pending && (
+              <div className="absolute inset-x-3 bottom-3 z-[1000] bg-slate-900/95 border border-emerald-600/60 rounded-xl p-4 shadow-2xl space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Stop name</label>
+                  <input
+                    type="text"
+                    value={pending.loading ? 'Finding place name...' : pending.name}
+                    disabled={pending.loading}
+                    onChange={(e) => setPending(p => ({...p, name: e.target.value}))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white">How many nights here?</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setNights(n => Math.max(0, n - 1))} className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 text-lg leading-none">−</button>
+                    <span className="w-8 text-center font-bold text-emerald-300">{nights}</span>
+                    <button type="button" onClick={() => setNights(n => Math.min(60, n + 1))} className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 text-lg leading-none">+</button>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={cancelStop} className="flex-1 py-2 rounded-lg border border-slate-700 text-sm text-slate-300">Cancel</button>
+                  <button type="button" onClick={confirmStop} disabled={pending.loading} className="flex-1 py-2 rounded-lg bg-emerald-500 text-slate-950 text-sm font-bold disabled:opacity-50">Add stop</button>
+                </div>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-slate-500">Tip: tap anywhere on the map to drop a pin.</p>
+        </div>
+      );
+    };
 
     function App() {
       // --- FORM STATE ---
@@ -67,11 +281,8 @@
         return today.toISOString().split('T')[0];
       });
 
-      const [locations, setLocations] = useState([
-        {id: '1', name: 'Yosemite National Park', days: 3},
-        {id: '2', name: '', days: 2},
-        {id: '3', name: '', days: 1}
-      ]);
+      // Each stop: {id, name, lat, lon, nights}
+      const [locations, setLocations] = useState([]);
 
       const [personId, setPersonId] = useState(FAMILY[0].id);
       const person = FAMILY.find(p => p.id === personId) || FAMILY[0];
@@ -79,6 +290,45 @@
       const age = person.age;
 
       const selectPerson = (p) => setPersonId(p.id);
+
+      // --- KID PHOTOS (saved on this device) ---
+      const [photos, setPhotos] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('pocketpath_photos')) || {};
+        } catch (e) {
+          return {};
+        }
+      });
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('pocketpath_photos', JSON.stringify(photos));
+        } catch (e) {
+          console.error('Could not save photos', e);
+        }
+      }, [photos]);
+
+      // Crop to a square and shrink to 256px so photos stay small enough to store
+      const handlePhotoUpload = (pid, file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const size = 256;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const side = Math.min(img.width, img.height);
+            canvas.getContext('2d').drawImage(
+              img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size
+            );
+            setPhotos(prev => ({...prev, [pid]: canvas.toDataURL('image/jpeg', 0.85)}));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      };
       const [selectedActivities, setSelectedActivities] = useState(['hike', 'camping']);
 
       // --- WEATHER & UI STATE ---
@@ -91,19 +341,20 @@
       const [activeCategoryFilter, setActiveCategoryFilter] = useState('All');
       const [copiedNotification, setCopiedNotification] = useState(false);
 
-      const activeLocations = useMemo(() => {
-        return locations.filter(loc => loc.name.trim().length > 0);
-      }, [locations]);
+      const activeLocations = locations;
 
-      const totalTripDays = useMemo(() => {
-        return activeLocations.reduce((sum, loc) => sum + (parseInt(loc.days, 10) || 1), 0);
+      const totalNights = useMemo(() => {
+        return activeLocations.reduce((sum, loc) => sum + (parseInt(loc.nights, 10) || 0), 0);
       }, [activeLocations]);
 
-      const handleLocationChange = (index, field, value) => {
-        const newLocs = [...locations];
-        newLocs[index][field] = value;
-        setLocations(newLocs);
-      };
+      // A trip with N nights spans N + 1 days
+      const totalTripDays = totalNights + 1;
+
+      const addLocation = (loc) => setLocations(prev => [...prev, loc]);
+      const removeLocation = (id) => setLocations(prev => prev.filter(l => l.id !== id));
+      const changeNights = (id, delta) => setLocations(prev => prev.map(l =>
+        l.id === id ? {...l, nights: Math.min(60, Math.max(0, l.nights + delta))} : l
+      ));
 
       const toggleActivity = (actId) => {
         setSelectedActivities(prev =>
@@ -166,42 +417,34 @@
         const results = {};
 
         for (const loc of activeLocations) {
-          if (!loc.name.trim()) continue;
-
           try {
-            const geoRes = await fetch(
-              `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(loc.name)}&count=1&language=en&format=json`
+            // Stops picked on the map already have coordinates
+            const latitude = loc.lat;
+            const longitude = loc.lon;
+            if (latitude == null || longitude == null) throw new Error('Location has no coordinates');
+
+            const weatherRes = await fetch(
+              `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&temperature_unit=fahrenheit&forecast_days=7`
             );
-            const geoData = await geoRes.json();
+            const wData = await weatherRes.json();
 
-            if (geoData.results && geoData.results.length > 0) {
-              const {latitude, longitude, name, admin1} = geoData.results[0];
+            if (wData.daily) {
+              const maxTemp = Math.round(Math.max(...wData.daily.temperature_2m_max));
+              const minTemp = Math.round(Math.min(...wData.daily.temperature_2m_min));
+              const maxRainProb = Math.max(...wData.daily.precipitation_probability_max);
 
-              const weatherRes = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&temperature_unit=fahrenheit&forecast_days=7`
-              );
-              const wData = await weatherRes.json();
-
-              if (wData.daily) {
-                const maxTemp = Math.round(Math.max(...wData.daily.temperature_2m_max));
-                const minTemp = Math.round(Math.min(...wData.daily.temperature_2m_min));
-                const maxRainProb = Math.max(...wData.daily.precipitation_probability_max);
-
-                results[loc.id] = {
-                  displayName: `${name}${admin1 ? `, ${admin1}` : ''}`,
-                  maxTemp,
-                  minTemp,
-                  rainChance: maxRainProb,
-                  hasRain: maxRainProb > 35,
-                  isCold: minTemp < 50,
-                  isHot: maxTemp > 78,
-                  isFallback: false
-                };
-              } else {
-                throw new Error('No weather metrics returned');
-              }
+              results[loc.id] = {
+                displayName: loc.name,
+                maxTemp,
+                minTemp,
+                rainChance: maxRainProb,
+                hasRain: maxRainProb > 35,
+                isCold: minTemp < 50,
+                isHot: maxTemp > 78,
+                isFallback: false
+              };
             } else {
-              throw new Error('Location not found');
+              throw new Error('No weather metrics returned');
             }
           } catch (err) {
             results[loc.id] = {
@@ -225,7 +468,7 @@
       // --- GENERATE PACKING LIST ENGINE ---
       const generatePackingList = async () => {
         if (activeLocations.length === 0) {
-          alert('Please add at least one valid location name.');
+          alert('Add at least one destination using the map.');
           return;
         }
 
@@ -409,7 +652,7 @@
 
       const copyToClipboard = () => {
         if (!generatedList) return;
-        let textOutput = `🏕️ ADVENTURE PACKING LIST\nTrip Duration: ${totalTripDays} Days (${startDate})\nLocations: ${activeLocations.map(l => l.name).join(', ')}\n\n`;
+        let textOutput = `🏕️ ADVENTURE PACKING LIST\nTrip: ${totalNights} nights starting ${startDate}\nStops: ${activeLocations.map(l => `${l.name} (${l.nights}n)`).join(', ')}\n\n`;
 
         Object.keys(generatedList).forEach(cat => {
           textOutput += `=== ${cat.toUpperCase()} ===\n`;
@@ -480,33 +723,35 @@
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
-                        Destinations & Time Spent
+                        Destinations & Nights
                       </label>
-                      <span className="text-xs text-slate-500">Up to 3 stops</span>
+                      {locations.length > 0 && (
+                        <span className="text-xs text-slate-400">{totalNights} night{totalNights === 1 ? '' : 's'} total</span>
+                      )}
                     </div>
 
-                    {locations.map((loc, idx) => (
-                      <div key={loc.id} className="flex items-center gap-3">
-                        <input
-                          type="text"
-                          placeholder={idx === 0 ? "e.g., Moab, Utah (Required)" : `Location ${idx + 1} (Optional)`}
-                          value={loc.name}
-                          onChange={(e) => handleLocationChange(idx, 'name', e.target.value)}
-                          className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                        />
-                        <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-700 rounded-xl px-3 py-1.5 w-28 shrink-0">
-                          <input
-                            type="number"
-                            min="1"
-                            max="30"
-                            value={loc.days}
-                            onChange={(e) => handleLocationChange(idx, 'days', Math.max(1, parseInt(e.target.value, 10) || 1))}
-                            className="w-10 bg-transparent text-sm text-center font-semibold text-slate-100 focus:outline-none"
-                          />
-                          <span className="text-xs text-slate-400">Days</span>
-                        </div>
-                      </div>
-                    ))}
+                    <MapPicker locations={locations} onAdd={addLocation} />
+
+                    {locations.length === 0 ? (
+                      <p className="text-sm text-slate-500 italic">No stops yet. Search or drop a pin to add your first destination.</p>
+                    ) : (
+                      <ol className="space-y-2">
+                        {locations.map((loc, idx) => (
+                          <li key={loc.id} className="flex items-center gap-3 bg-slate-900/90 border border-slate-700 rounded-xl px-3 py-2">
+                            <span className="w-7 h-7 shrink-0 rounded-full bg-emerald-500 text-slate-950 text-xs font-extrabold flex items-center justify-center">{idx + 1}</span>
+                            <span className="flex-1 text-sm text-slate-100 truncate">{loc.name}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button type="button" onClick={() => changeNights(loc.id, -1)} className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 leading-none">−</button>
+                              <span className="w-14 text-center text-xs text-slate-300"><b className="text-emerald-300 text-sm">{loc.nights}</b> night{loc.nights === 1 ? '' : 's'}</span>
+                              <button type="button" onClick={() => changeNights(loc.id, 1)} className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 leading-none">+</button>
+                            </div>
+                            <button type="button" onClick={() => removeLocation(loc.id)} title="Remove stop" className="p-1.5 text-slate-500 hover:text-red-400">
+                              <Icon name="X" className="w-4 h-4" />
+                            </button>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
                   </div>
                 </div>
 
@@ -520,20 +765,44 @@
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
                       Who's Packing?
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {FAMILY.map(p => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => selectPerson(p)}
-                          className={`py-2.5 px-3 rounded-xl text-sm font-semibold border transition-all ${personId === p.id
-                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                            : 'bg-slate-900/60 border-slate-700 text-slate-400'
-                            }`}
-                        >
-                          {p.name}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-3 gap-3">
+                      {FAMILY.map(p => {
+                        const isSelected = personId === p.id;
+                        return (
+                          <div key={p.id} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => selectPerson(p)}
+                              className={`w-full flex flex-col items-center gap-2 py-3 px-2 rounded-xl border transition-all ${isSelected
+                                ? 'bg-emerald-500/20 border-emerald-500'
+                                : 'bg-slate-900/60 border-slate-700'
+                                }`}
+                            >
+                              <div className={`w-16 h-16 rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-2xl font-bold text-slate-300 ${isSelected ? 'ring-2 ring-emerald-400' : ''}`}>
+                                {photos[p.id]
+                                  ? <img src={photos[p.id]} alt={p.name} className="w-full h-full object-cover" />
+                                  : p.name[0]}
+                              </div>
+                              <span className={`text-sm font-semibold ${isSelected ? 'text-emerald-300' : 'text-slate-300'}`}>{p.name}</span>
+                            </button>
+                            <label
+                              title={`${photos[p.id] ? 'Change' : 'Add'} ${p.name}'s photo`}
+                              className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-slate-900/90 border border-slate-600 text-slate-300 cursor-pointer hover:text-emerald-300"
+                            >
+                              <Icon name="Camera" className="w-3.5 h-3.5" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  handlePhotoUpload(p.id, e.target.files[0]);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
