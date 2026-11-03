@@ -23,13 +23,13 @@
     const {useState, useEffect, useMemo} = React;
 
     // Helper Component for Lucide Icons
-    const Icon = ({name, className = "w-5 h-5"}) => {
+    const Icon = ({name, fallback, className = "w-5 h-5"}) => {
       const iconRef = React.useRef(null);
 
       useEffect(() => {
         if (iconRef.current && window.lucide) {
           iconRef.current.innerHTML = '';
-          const iconNode = window.lucide.createElement(window.lucide.icons[name] || window.lucide.icons.HelpCircle);
+          const iconNode = window.lucide.createElement(window.lucide.icons[name] || window.lucide.icons[fallback] || window.lucide.icons.HelpCircle);
           iconRef.current.appendChild(iconNode);
           if (className) {
             const svg = iconRef.current.querySelector('svg');
@@ -47,7 +47,7 @@
       {id: 'biking', name: 'Mountain Biking', iconName: 'Bike', desc: 'Singletrack, dirt roads, or trails'},
       {id: 'swimming', name: 'Swimming', iconName: 'Waves', desc: 'Lakes, oceans, or pools'},
       {id: 'camping', name: 'Camping', iconName: 'Tent', desc: 'Overnight tent or wilderness stay'},
-      {id: 'trailrunning', name: 'Trail Running', iconName: 'Footprints', desc: 'Off-road running & rugged terrain'},
+      {id: 'motocamping', name: 'Moto Camping', iconName: 'Motorbike', fallbackIcon: 'Gauge', desc: 'Motorcycle trips with camp gear on the bike'},
       {id: 'sightseeing', name: 'Sightseeing', iconName: 'Camera', desc: 'Town exploration, light walking'},
     ];
 
@@ -76,12 +76,9 @@
       const [personId, setPersonId] = useState(FAMILY[0].id);
       const person = FAMILY.find(p => p.id === personId) || FAMILY[0];
       const gender = person.gender;
-      const [age, setAge] = useState(FAMILY[0].age);
+      const age = person.age;
 
-      const selectPerson = (p) => {
-        setPersonId(p.id);
-        setAge(p.age);
-      };
+      const selectPerson = (p) => setPersonId(p.id);
       const [selectedActivities, setSelectedActivities] = useState(['hike', 'camping']);
 
       // --- WEATHER & UI STATE ---
@@ -336,11 +333,17 @@
           );
         }
 
-        if (selectedActivities.includes('trailrunning')) {
+        if (selectedActivities.includes('motocamping')) {
           categories['Activity Gear'].push(
-            {id: 'a_tr1', text: 'Trail Running Shoes'},
-            {id: 'a_tr2', text: 'Hydration Vest'},
-            {id: 'a_tr3', text: 'Anti-Chafing Body Glide'}
+            {id: 'a_m1', text: 'Helmet & Comms'},
+            {id: 'a_m2', text: 'Riding Jacket & Pants'},
+            {id: 'a_m3', text: 'Riding Boots & Gloves'},
+            {id: 'a_m4', text: 'Rain Gear / Liners for Riding'},
+            {id: 'a_m5', text: 'Compact Tent & Sleep Kit', note: 'Packs small enough for the bike'},
+            {id: 'a_m6', text: 'Luggage, Straps & Bungee Net'},
+            {id: 'a_m7', text: 'Tire Repair Kit & Mini Pump'},
+            {id: 'a_m8', text: 'Bike Tools, Chain Lube & Spare Fuses'},
+            {id: 'a_m9', text: 'Fuel Plan / Extra Fuel Bottle', note: 'Check gas stops on the route'}
           );
         }
 
@@ -533,26 +536,6 @@
                       ))}
                     </div>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                      {person.name}'s Age
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="1"
-                        max="120"
-                        placeholder="e.g. 28"
-                        value={age}
-                        onChange={(e) => setAge(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 0))}
-                        className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                      />
-                      <span className="absolute right-3.5 top-2.5 text-xs text-slate-500 pointer-events-none">
-                        years
-                      </span>
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -576,7 +559,7 @@
                           }`}
                       >
                         <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400'}`}>
-                          <Icon name={act.iconName} className="w-5 h-5" />
+                          <Icon name={act.iconName} fallback={act.fallbackIcon} className="w-5 h-5" />
                         </div>
                         <div>
                           <span className={`text-sm font-semibold ${isSelected ? 'text-emerald-300' : 'text-slate-200'}`}>
