@@ -51,6 +51,15 @@
       {id: 'sightseeing', name: 'Sightseeing', iconName: 'Camera', desc: 'Town exploration, light walking'},
     ];
 
+    // --- FAMILY PROFILES ---
+    // Each person's details drive their packing list (sizes, age-based extras, etc.).
+    // Later this can become an onboarding step where any family adds their own people.
+    const FAMILY = [
+      {id: 'penny', name: 'Penny', gender: 'female', age: 35},
+      {id: 'leon', name: 'Leon', gender: 'male', age: 35},
+      {id: 'niko', name: 'Niko', gender: 'male', age: 8},
+    ];
+
     function App() {
       // --- FORM STATE ---
       const [startDate, setStartDate] = useState(() => {
@@ -64,8 +73,15 @@
         {id: '3', name: '', days: 1}
       ]);
 
-      const [gender, setGender] = useState('male');
-      const [age, setAge] = useState(28);
+      const [personId, setPersonId] = useState(FAMILY[0].id);
+      const person = FAMILY.find(p => p.id === personId) || FAMILY[0];
+      const gender = person.gender;
+      const [age, setAge] = useState(FAMILY[0].age);
+
+      const selectPerson = (p) => {
+        setPersonId(p.id);
+        setAge(p.age);
+      };
       const [selectedActivities, setSelectedActivities] = useState(['hike', 'camping']);
 
       // --- WEATHER & UI STATE ---
@@ -499,24 +515,20 @@
 
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                      Gender / Fitting Style
+                      Who's Packing?
                     </label>
                     <div className="grid grid-cols-3 gap-2">
-                      {[
-                        {id: 'male', label: 'Male'},
-                        {id: 'female', label: 'Female'},
-                        {id: 'other', label: 'Unisex'}
-                      ].map(g => (
+                      {FAMILY.map(p => (
                         <button
-                          key={g.id}
+                          key={p.id}
                           type="button"
-                          onClick={() => setGender(g.id)}
-                          className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${gender === g.id
+                          onClick={() => selectPerson(p)}
+                          className={`py-2.5 px-3 rounded-xl text-sm font-semibold border transition-all ${personId === p.id
                             ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                             : 'bg-slate-900/60 border-slate-700 text-slate-400'
                             }`}
                         >
-                          {g.label}
+                          {p.name}
                         </button>
                       ))}
                     </div>
@@ -524,7 +536,7 @@
 
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                      Traveler Age
+                      {person.name}'s Age
                     </label>
                     <div className="relative">
                       <input
