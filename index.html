@@ -274,6 +274,311 @@
       );
     };
 
+    // Shared family gear (tent, stove, first aid...) lives on its own list so it isn't repeated per kid
+    const FAMILY_GEAR = {id: 'family', name: 'Family Gear', shared: true};
+    const PROFILES = [...FAMILY, FAMILY_GEAR];
+
+    const CATEGORY_ORDER = [
+      'Clothing & Apparel',
+      'Activity Gear',
+      'Weather & Climate Essentials',
+      'Toiletries & Personal Care',
+      'General & Logistics'
+    ];
+
+    // --- DATE HELPERS (dates are YYYY-MM-DD strings) ---
+    const addDays = (dateStr, n) => {
+      const d = new Date(dateStr + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    const localToday = () => {
+      const d = new Date();
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+    const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+    const shiftYears = (dateStr, years) => {
+      const md = dateStr.slice(4) === '-02-29' ? '-02-28' : dateStr.slice(4);
+      return `${Number(dateStr.slice(0, 4)) - years}${md}`;
+    };
+    const shortDate = (dateStr) => new Date(dateStr + 'T00:00:00Z').toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+
+    // --- WEATHER (Open-Meteo, free, no key) ---
+    const FORECAST_WINDOW_DAYS = 15; // Open-Meteo forecasts about 16 days ahead
+    const DAILY_VARS = 'temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max';
+    const UNITS = '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto';
+    const nums = (arr = []) => arr.filter(v => v != null);
+    const sum = (arr) => nums(arr).reduce((s, v) => s + v, 0);
+    const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+
+    // Get weather for one stop over the dates you'll actually be there.
+    // Within ~2 weeks: real forecast. Further out: typical weather from the same dates in the last 3 years.
+    const fetchStopWeather = async (stop, from, to) => {
+      const base = {displayName: stop.name, from, to};
+      try {
+        if (stop.lat == null || stop.lon == null) throw new Error('No coordinates');
+        const today = localToday();
+
+        if (daysBetween(today, to) <= FORECAST_WINDOW_DAYS && daysBetween(today, from) >= -60) {
+          const res = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${stop.lat}&longitude=${stop.lon}&daily=${DAILY_VARS},precipitation_probability_max&start_date=${from}&end_date=${to}${UNITS}`
+          );
+          const d = (await res.json()).daily;
+          if (!d || !d.time || d.time.length === 0) throw new Error('No forecast data');
+          const rainChance = Math.round(Math.max(0, ...nums(d.precipitation_probability_max)));
+          return {
+            ...base,
+            source: 'forecast',
+            maxTemp: Math.round(Math.max(...nums(d.temperature_2m_max))),
+            minTemp: Math.round(Math.min(...nums(d.temperature_2m_min))),
+            rainChance,
+            hasRain: rainChance > 35 || sum(d.precipitation_sum) > 0.1,
+            hasSnow: sum(d.snowfall_sum) > 0,
+            maxWind: Math.round(Math.max(0, ...nums(d.wind_speed_10m_max)))
+          };
+        }
+
+        const years = await Promise.all([1, 2, 3].map(async (y) => {
+          try {
+            const res = await fetch(
+              `https://archive-api.open-meteo.com/v1/archive?latitude=${stop.lat}&longitude=${stop.lon}&daily=${DAILY_VARS}&start_date=${shiftYears(from, y)}&end_date=${shiftYears(to, y)}${UNITS}`
+            );
+            const d = (await res.json()).daily;
+            return d && d.time && d.time.length ? d : null;
+          } catch (e) {
+            return null;
+          }
+        }));
+        const valid = years.filter(Boolean);
+        if (valid.length === 0) throw new Error('No historical data');
+
+        const wetYears = valid.filter(d => nums(d.precipitation_sum).some(v => v >= 0.04)).length;
+        const snowYears = valid.filter(d => sum(d.snowfall_sum) > 0).length;
+        const rainChance = Math.round((wetYears / valid.length) * 100);
+        return {
+          ...base,
+          source: 'typical',
+          years: valid.length,
+          maxTemp: Math.round(avg(valid.map(d => Math.max(...nums(d.temperature_2m_max))))),
+          minTemp: Math.round(avg(valid.map(d => Math.min(...nums(d.temperature_2m_min))))),
+          rainChance,
+          hasRain: rainChance > 35,
+          hasSnow: snowYears > 0,
+          maxWind: Math.round(avg(valid.map(d => Math.max(0, ...nums(d.wind_speed_10m_max)))))
+        };
+      } catch (err) {
+        return {...base, source: 'unavailable'};
+      }
+    };
+
+    // Combine every stop into one "worst case" picture for the whole trip
+    const summarizeWeather = (stops) => {
+      const ok = stops.filter(w => w.source !== 'unavailable');
+      const missing = stops.filter(w => w.source === 'unavailable').map(w => w.displayName);
+      const minTemp = ok.length ? Math.min(...ok.map(w => w.minTemp)) : null;
+      const maxTemp = ok.length ? Math.max(...ok.map(w => w.maxTemp)) : null;
+      return {
+        missing,
+        minTemp,
+        maxTemp,
+        hasRain: ok.some(w => w.hasRain),
+        hasSnow: ok.some(w => w.hasSnow),
+        isCold: minTemp != null && minTemp < 50,
+        isFreezing: minTemp != null && minTemp <= 32,
+        isHot: maxTemp != null && maxTemp > 78,
+        isVeryHot: maxTemp != null && maxTemp >= 90,
+        isWindy: ok.some(w => w.maxWind >= 25)
+      };
+    };
+
+    const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const activityName = (id) => (id === 'always' ? 'Every trip' : (AVAILABLE_ACTIVITIES.find(a => a.id === id)?.name || id));
+
+    // --- PACKING LIST ENGINE ---
+    // Builds one profile's list from trip length, weather, activities, and that profile's saved items.
+    const buildPackingList = (profile, {days, activities, w, saved = []}) => {
+      const cats = {};
+      CATEGORY_ORDER.forEach(c => { cats[c] = []; });
+      const add = (cat, text, note, extra = {}) => {
+        if (!cats[cat]) cats[cat] = [];
+        const exists = Object.values(cats).some(list => list.some(i => i.text.toLowerCase() === text.toLowerCase()));
+        if (!exists) cats[cat].push({id: `${profile.id}_${slug(text)}`, text, note, ...extra});
+      };
+      const has = (a) => activities.includes(a);
+      const C = 'Clothing & Apparel', A = 'Activity Gear', W = 'Weather & Climate Essentials', T = 'Toiletries & Personal Care', G = 'General & Logistics';
+
+      // If any stop's weather couldn't load, pack for rain and cold just in case
+      const unsure = w.missing.length > 0;
+      const unsureNote = 'Weather unavailable for part of the trip, packed just in case';
+      const rain = w.hasRain || unsure;
+      const cold = w.isCold || unsure;
+      const lowNote = w.minTemp != null ? `Lows around ${w.minTemp}°F` : undefined;
+      const sunny = w.isHot || has('swimming') || has('hike') || has('biking');
+      const camping = has('camping') || has('motocamping');
+
+      if (profile.shared) {
+        // ---------- FAMILY GEAR (shared items, packed once) ----------
+        if (camping) {
+          const tent = has('motocamping') && !has('camping') ? 'Compact Tent (packs on the bike)'
+            : has('motocamping') ? 'Tent (compact one if it rides on the moto)' : 'Tent';
+          add(A, tent);
+          add(A, 'Camp Stove, Fuel & Cook Kit');
+          add(A, 'Plates, Cups & Utensils');
+          add(A, 'Lantern');
+          if (rain) add(A, 'Tarp / Rain Fly', rain && !w.hasRain ? unsureNote : 'Rain in the forecast');
+          if (w.isWindy) add(A, 'Extra Stakes & Guy Lines', 'Windy conditions expected');
+          if (w.isFreezing) add(A, 'Hand Warmers', 'Freezing nights expected');
+        }
+        if (has('biking')) {
+          add(A, 'Bike Pump & Repair Tools');
+          add(A, 'Bike Rack');
+        }
+        if (has('motocamping')) {
+          add(A, 'Luggage, Straps & Bungee Net');
+          add(A, 'Tire Repair Kit & Mini Pump');
+          add(A, 'Bike Tools, Chain Lube & Spare Fuses');
+          add(A, 'Fuel Plan / Extra Fuel Bottle', 'Check gas stops on the route');
+        }
+        if (has('hike')) add(A, 'Trail Map (downloaded offline)');
+        if (has('swimming') && w.isHot) add(A, 'Sun Shade or Umbrella?');
+
+        if (rain) add(W, 'Waterproof / Dry Bags');
+        if (w.isHot) add(W, 'Extra Water & Electrolytes', `Highs up to ${w.maxTemp}°F`);
+        if (w.hasSnow) add(W, 'Ice Scraper & Snow Shovel?', 'Snow possible');
+        if (sunny) add(W, 'Sunscreen');
+
+        add(T, 'First Aid Kit (bandaids, ibuprofen, kids\' meds)');
+        add(T, 'Insect Repellent');
+        add(T, 'Toothpaste & Floss');
+        add(T, 'Soap / Bodywash');
+
+        add(G, 'ID, Credit Cards & Cash');
+        add(G, 'Portable Power Bank & Charging Cables');
+        add(G, 'Download Offline Map');
+        add(G, 'Trash Bags');
+        add(G, 'Multi-tool and/or Pocket Knife');
+        add(G, 'Snacks for the Drive');
+      } else {
+        // ---------- A KID'S PERSONAL LIST ----------
+        const age = profile.age;
+        const wet = rain || w.hasSnow || has('swimming');
+        const shirts = Math.max(2, Math.ceil(days / 1.5));
+        const bottoms = Math.max(1, Math.ceil(days / 2.5));
+
+        // Clothing follows the temperature range
+        if (w.isHot && !cold) {
+          add(C, `${shirts}x T-Shirts`);
+          add(C, `${bottoms}x Shorts`);
+        } else if (cold && !w.isHot) {
+          add(C, `${shirts}x Long-Sleeve Shirts`);
+          add(C, `${bottoms}x Long Pants`);
+        } else if (cold && w.isHot) {
+          add(C, `${shirts}x Shirts (mix of short & long sleeve)`, 'Big temperature swings');
+          add(C, `${bottoms}x Pants & Shorts (mix)`);
+        } else {
+          add(C, `${shirts}x Shirts`);
+          add(C, `${bottoms}x Pants / Shorts`);
+        }
+        add(C, `${days + 1}x Underwear`);
+        add(C, `${days + 1 + (wet ? 2 : 0)}x Socks`, wet ? 'Includes 2 extra pairs for wet days' : undefined);
+        add(C, '1x Sleepwear');
+        if (age < 12) add(C, '2x Extra Change of Clothes', 'Backup for spills & mud');
+
+        // Weather
+        if (rain) add(W, 'Rain Jacket', w.hasRain ? 'Rain expected' : unsureNote);
+        if (rain && (has('hike') || camping)) add(W, 'Waterproof Shoes or Boots?');
+        if (cold) {
+          add(W, 'Warm Jacket', w.isCold ? lowNote : unsureNote);
+          add(W, 'Warm Base Layer', 'For chilly mornings & nights');
+          add(W, 'Beanie & Gloves');
+        }
+        if (w.isFreezing) {
+          add(W, 'Thermal Base Layers (top & bottom)', lowNote);
+          add(W, 'Warm Wool Socks');
+        }
+        if (w.hasSnow) {
+          add(W, 'Snow Pants & Snow Boots', 'Snow possible');
+          add(W, 'Waterproof Gloves');
+        }
+        if (sunny) add(W, 'Sunglasses & Sun Hat');
+        if (w.isVeryHot) add(W, 'Cooling Towel or Neck Gaiter?', `Highs up to ${w.maxTemp}°F`);
+        if (w.isWindy) add(W, 'Windbreaker', 'Windy conditions expected');
+        add(W, 'Light Hoodie or Layer', 'Versatile outerwear');
+
+        // Activities (personal gear only; shared gear is on the Family Gear list)
+        if (has('hike')) {
+          add(A, 'Hiking Shoes');
+          add(A, 'Small Backpack');
+          add(A, 'Water Bottle');
+          add(A, 'Trail Snacks');
+          if (w.isHot) add(A, 'Extra Water Bottle', `Highs up to ${w.maxTemp}°F`);
+          if (w.hasSnow || w.isFreezing) add(A, 'Traction Spikes for Shoes?', 'Icy or snowy trails possible');
+        }
+        if (has('biking')) {
+          add(A, 'Bike Helmet');
+          add(A, 'Bike Gloves');
+          add(A, 'Diaper Pants', 'Mountain biking padded underwear');
+        }
+        if (has('swimming')) {
+          add(A, 'Swimsuit');
+          add(A, 'Swim Towel');
+          add(A, 'Water Shoes or Sandals');
+          add(A, 'Swim Goggles');
+          if (cold) {
+            add(A, 'Warm Layer for After Swimming', 'Chilly temps expected');
+            add(A, 'Rash Guard or Wetsuit?');
+          }
+        }
+        if (camping) {
+          add(A, 'Sleeping Bag & Pad', w.minTemp != null ? `Make sure it's rated for ${w.minTemp}°F or colder` : undefined);
+          add(A, 'Headlamp');
+          add(A, 'Camp Pillow');
+          add(A, 'Camp Shoes');
+        }
+        if (has('motocamping')) {
+          add(A, 'Helmet & Comms');
+          add(A, 'Riding Jacket & Pants');
+          add(A, 'Riding Boots & Gloves');
+          if (rain) add(A, 'Rain Gear / Liners for Riding');
+          if (cold) add(A, 'Warm Riding Gloves & Neck Gaiter', lowNote);
+        }
+        if (has('sightseeing')) {
+          add(A, 'Walking Shoes');
+          add(A, 'Small Backpack');
+        }
+
+        // Personal care
+        add(T, 'Toothbrush');
+        add(T, 'Hairbrush');
+        add(T, 'Personal Medications');
+        if (cold || w.isWindy || sunny) add(T, 'Lip Balm (with SPF)');
+        if (profile.gender === 'female' && age >= 10) add(T, 'Feminine Hygiene Products');
+
+        // Kid-friendly extras instead of adult logistics
+        add(G, 'Water Bottle');
+        add(G, 'Book, Cards or Small Toys for Downtime');
+        if (age <= 8) add(G, 'Comfort Item / Stuffy?');
+        if (age < 10) add(G, 'Card with Parent Names & Phone #', 'In a pocket or backpack');
+      }
+
+      // Items this person keeps for an activity (or every trip)
+      saved.forEach(s => {
+        if (s.activity !== 'always' && !has(s.activity)) return;
+        const savedInfo = {savedId: s.id, savedFor: s.activity};
+        // If the engine already added the same item, just mark it as saved
+        for (const list of Object.values(cats)) {
+          const match = list.find(i => i.text.toLowerCase() === s.text.toLowerCase());
+          if (match) {
+            Object.assign(match, savedInfo);
+            return;
+          }
+        }
+        add(s.category, s.text, undefined, {id: s.id, ...savedInfo});
+      });
+
+      return cats;
+    };
+
     function App() {
       // --- FORM STATE ---
       const [startDate, setStartDate] = useState(() => {
@@ -285,9 +590,7 @@
       const [locations, setLocations] = useState([]);
 
       const [personId, setPersonId] = useState(FAMILY[0].id);
-      const person = FAMILY.find(p => p.id === personId) || FAMILY[0];
-      const gender = person.gender;
-      const age = person.age;
+      const person = PROFILES.find(p => p.id === personId) || FAMILY[0];
 
       const selectPerson = (p) => setPersonId(p.id);
 
@@ -331,15 +634,35 @@
       };
       const [selectedActivities, setSelectedActivities] = useState(['hike', 'camping']);
 
-      // --- WEATHER & UI STATE ---
-      const [weatherData, setWeatherData] = useState({});
+      // --- WEATHER & LIST STATE ---
+      // Lists, check marks, and saved items are kept on this device between visits
+      const loadStored = (key, fallback) => {
+        try {
+          const v = JSON.parse(localStorage.getItem(key));
+          return v ?? fallback;
+        } catch (e) {
+          return fallback;
+        }
+      };
+      const [weatherData, setWeatherData] = useState(() => loadStored('pocketpath_weather', []));
       const [loadingWeather, setLoadingWeather] = useState(false);
-      const [generatedList, setGeneratedList] = useState(null);
-      const [checkedItems, setCheckedItems] = useState({});
-      const [customItems, setCustomItems] = useState({});
+      const [lists, setLists] = useState(() => loadStored('pocketpath_lists', null)); // {profileId: {category: [items]}}
+      const [checkedItems, setCheckedItems] = useState(() => loadStored('pocketpath_checked', {})); // {profileId: {itemId: true}}
+      const [savedItems, setSavedItems] = useState(() => loadStored('pocketpath_saved_items', {})); // {profileId: [{id, text, category, activity}]}
       const [newItemText, setNewItemText] = useState({});
-      const [activeCategoryFilter, setActiveCategoryFilter] = useState('All');
+      const [savingItemId, setSavingItemId] = useState(null);
       const [copiedNotification, setCopiedNotification] = useState(false);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('pocketpath_lists', JSON.stringify(lists));
+          localStorage.setItem('pocketpath_checked', JSON.stringify(checkedItems));
+          localStorage.setItem('pocketpath_saved_items', JSON.stringify(savedItems));
+          localStorage.setItem('pocketpath_weather', JSON.stringify(weatherData));
+        } catch (e) {
+          console.error('Could not save lists', e);
+        }
+      }, [lists, checkedItems, savedItems, weatherData]);
 
       const activeLocations = locations;
 
@@ -361,264 +684,74 @@
           prev.includes(actId) ? prev.filter(id => id !== actId) : [...prev, actId]
         );
       };
-      //=========================================================================
-      // 1. Delete an item from any category
-      const handleDeleteItem = (catName, itemId) => {
-        setGeneratedList(prev => ({
-          ...prev,
-          [catName]: prev[catName].filter(item => item.id !== itemId)
-        }));
+
+      // --- EDITING THE CURRENT PERSON'S LIST ---
+      const currentList = lists ? (lists[personId] || {}) : null;
+
+      const updateCurrentList = (fn) => {
+        setLists(prev => ({...prev, [personId]: fn(prev[personId] || {})}));
       };
 
-      // 2. Add a new custom item to a specific category
+      const handleDeleteItem = (catName, itemId) => {
+        updateCurrentList(list => ({...list, [catName]: list[catName].filter(item => item.id !== itemId)}));
+      };
+
       const handleAddItem = (catName) => {
         const text = newItemText[catName]?.trim();
         if (!text) return;
-
-        const newItem = {
-          id: `custom_${Date.now()}`,
-          text: text
-        };
-
-        setGeneratedList(prev => ({
-          ...prev,
-          [catName]: [...prev[catName], newItem]
-        }));
-
-        // Clear input box
+        const newItem = {id: `custom_${Date.now()}`, text, custom: true};
+        updateCurrentList(list => ({...list, [catName]: [...(list[catName] || []), newItem]}));
         setNewItemText(prev => ({...prev, [catName]: ''}));
       };
 
-      // Load saved packing list on initial page load
-      useEffect(() => {
-        const savedList = localStorage.getItem('wayfare_packing_list');
-        if (savedList) {
-          try {
-            setGeneratedList(JSON.parse(savedList));
-          } catch (e) {
-            console.error("Failed to parse saved list", e);
-          }
-        }
-      }, []);
-
-      // Auto-save whenever generatedList changes
-      useEffect(() => {
-        if (generatedList) {
-          localStorage.setItem('wayfare_packing_list', JSON.stringify(generatedList));
-        }
-      }, [generatedList]);
-
-
-      //=========================================================================
-
-      // --- OPEN-METEO WEATHER API ---
-      const fetchWeatherForLocations = async () => {
-        setLoadingWeather(true);
-        const results = {};
-
-        for (const loc of activeLocations) {
-          try {
-            // Stops picked on the map already have coordinates
-            const latitude = loc.lat;
-            const longitude = loc.lon;
-            if (latitude == null || longitude == null) throw new Error('Location has no coordinates');
-
-            const weatherRes = await fetch(
-              `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&temperature_unit=fahrenheit&forecast_days=7`
-            );
-            const wData = await weatherRes.json();
-
-            if (wData.daily) {
-              const maxTemp = Math.round(Math.max(...wData.daily.temperature_2m_max));
-              const minTemp = Math.round(Math.min(...wData.daily.temperature_2m_min));
-              const maxRainProb = Math.max(...wData.daily.precipitation_probability_max);
-
-              results[loc.id] = {
-                displayName: loc.name,
-                maxTemp,
-                minTemp,
-                rainChance: maxRainProb,
-                hasRain: maxRainProb > 35,
-                isCold: minTemp < 50,
-                isHot: maxTemp > 78,
-                isFallback: false
-              };
-            } else {
-              throw new Error('No weather metrics returned');
-            }
-          } catch (err) {
-            results[loc.id] = {
-              displayName: loc.name,
-              maxTemp: 72,
-              minTemp: 48,
-              rainChance: 25,
-              hasRain: false,
-              isCold: false,
-              isHot: false,
-              isFallback: true
-            };
-          }
-        }
-
-        setWeatherData(results);
-        setLoadingWeather(false);
-        return results;
+      // Keep an item on this person's permanent list for an activity (or every trip)
+      const saveItem = (catName, item, activity) => {
+        const saved = {id: `saved_${Date.now()}`, text: item.text, category: catName, activity};
+        setSavedItems(prev => ({...prev, [personId]: [...(prev[personId] || []), saved]}));
+        updateCurrentList(list => ({
+          ...list,
+          [catName]: list[catName].map(i => (i.id === item.id ? {...i, savedId: saved.id, savedFor: activity} : i))
+        }));
+        setSavingItemId(null);
       };
 
-      // --- GENERATE PACKING LIST ENGINE ---
+      const unsaveItem = (catName, item) => {
+        setSavedItems(prev => ({...prev, [personId]: (prev[personId] || []).filter(s => s.id !== item.savedId)}));
+        updateCurrentList(list => ({
+          ...list,
+          [catName]: list[catName].map(i => (i.id === item.id ? {...i, savedId: undefined, savedFor: undefined} : i))
+        }));
+      };
+
+      // --- GENERATE LISTS FOR EVERYONE ---
       const generatePackingList = async () => {
         if (activeLocations.length === 0) {
           alert('Add at least one destination using the map.');
           return;
         }
+        setLoadingWeather(true);
 
-        const wResults = await fetchWeatherForLocations();
-
-        let overallHasRain = false;
-        let overallIsCold = false;
-        let overallIsHot = false;
-
-        Object.values(wResults).forEach(w => {
-          if (w.hasRain) overallHasRain = true;
-          if (w.isCold) overallIsCold = true;
-          if (w.isHot) overallIsHot = true;
+        // Work out the dates you'll be at each stop, in order
+        let offset = 0;
+        const stopDates = activeLocations.map(loc => {
+          const from = addDays(startDate, offset);
+          const to = addDays(startDate, offset + Math.max(0, loc.nights));
+          offset += Math.max(0, loc.nights);
+          return {loc, from, to};
         });
 
+        const stopWeather = await Promise.all(stopDates.map(({loc, from, to}) => fetchStopWeather(loc, from, to)));
+        setWeatherData(stopWeather);
+        const w = summarizeWeather(stopWeather);
+
         const days = Math.max(1, totalTripDays);
-        const travelerAge = Number(age) || 28;
-
-        const shirtsCount = Math.max(2, Math.ceil(days / 1.5));
-        const pantsCount = Math.max(1, Math.ceil(days / 2.5));
-        const underwearCount = days + 1;
-        const socksCount = days + 1;
-
-        const categories = {
-          'Clothing & Apparel': [],
-          'Activity Gear': [],
-          'Weather & Climate Essentials': [],
-          'Toiletries & Personal Care': [],
-          'General & Logistics': []
-        };
-
-        const isFemale = gender === 'female';
-
-        categories['Clothing & Apparel'].push(
-          {id: 'c1', text: `${shirtsCount}x Shirts`},
-          {id: 'c2', text: `${pantsCount}x Pants / Shorts`},
-          {id: 'c3', text: `${underwearCount}x ${isFemale ? 'Underwear & Bras' : 'Underwear'}`},
-          {id: 'c4', text: `${socksCount}x Socks`},
-          {id: 'c5', text: `1x Sleepwear`}
-        );
-        if (travelerAge < 12) {
-          categories['Clothing & Apparel'].push({id: 'c6', text: '2x Extra Change of Clothes (Youth Backup)'});
-        }
-
-        if (overallHasRain) {
-          categories['Weather & Climate Essentials'].push(
-            {id: 'w1', text: 'Rain Jacket'},
-            {id: 'w2', text: 'Waterproof/Dry Bags'}
-          );
-        }
-
-        if (overallIsCold) {
-          categories['Weather & Climate Essentials'].push(
-            {id: 'w3', text: 'Warm Jacket', note: 'Lows expected under 50°F / 10°C'},
-            {id: 'w4', text: 'Warm Base Layer?', note: 'For chilly mornings/nights'},
-            {id: 'w5', text: 'Beanie & Gloves'}
-          );
-        }
-
-        if (overallIsHot || selectedActivities.includes('swimming') || selectedActivities.includes('hike')) {
-          categories['Weather & Climate Essentials'].push(
-            {id: 'w6', text: 'Sun defence', note: 'Sunglasses & Hat?'},
-            {id: 'w7', text: 'Sunscreen'}
-          );
-        }
-
-        categories['Weather & Climate Essentials'].push({id: 'w8', text: 'Light Windbreaker or Layering Hoodie', note: 'Versatile outerwear'});
-
-        if (selectedActivities.includes('hike')) {
-          categories['Activity Gear'].push(
-            {id: 'a_h1', text: 'Hiking Shoes'},
-            {id: 'a_h2', text: 'BackPack'},
-            {id: 'a_h3', text: 'Water Bottles'},
-            {id: 'a_h4', text: 'Trail Snacks'}
-          );
-          if (travelerAge > 50) {
-            categories['Activity Gear'].push({id: 'a_h5', text: 'Trekking Poles?'});
-          }
-        }
-
-        if (selectedActivities.includes('biking')) {
-          categories['Activity Gear'].push(
-            {id: 'a_b1', text: 'Helmet'},
-            {id: 'a_b2', text: 'Diaper Pants', note: 'mountain biking padded underware'},
-            {id: 'a_b3', text: 'Gloves and Sunglasses'},
-            {id: 'a_b4', text: 'Pump and tools'}
-          );
-        }
-
-        if (selectedActivities.includes('swimming')) {
-          categories['Activity Gear'].push(
-            {id: 'a_s1', text: `Swimsuit`},
-            {id: 'a_s2', text: 'Swim Towels'},
-            {id: 'a_s3', text: 'Water Shoes or Sandals'},
-            {id: 'a_s4', text: 'Swim Goggles'}
-          );
-        }
-
-        if (selectedActivities.includes('camping')) {
-          categories['Activity Gear'].push(
-            {id: 'a_c1', text: 'Tent'},
-            {id: 'a_c2', text: 'Sleeping Bag & Pad'},
-            {id: 'a_c3', text: 'Headlamp'},
-            {id: 'a_c4', text: 'Camp Stove, Fuel & stuff to eat with'}
-          );
-        }
-
-        if (selectedActivities.includes('motocamping')) {
-          categories['Activity Gear'].push(
-            {id: 'a_m1', text: 'Helmet & Comms'},
-            {id: 'a_m2', text: 'Riding Jacket & Pants'},
-            {id: 'a_m3', text: 'Riding Boots & Gloves'},
-            {id: 'a_m4', text: 'Rain Gear / Liners for Riding'},
-            {id: 'a_m5', text: 'Compact Tent & Sleep Kit', note: 'Packs small enough for the bike'},
-            {id: 'a_m6', text: 'Luggage, Straps & Bungee Net'},
-            {id: 'a_m7', text: 'Tire Repair Kit & Mini Pump'},
-            {id: 'a_m8', text: 'Bike Tools, Chain Lube & Spare Fuses'},
-            {id: 'a_m9', text: 'Fuel Plan / Extra Fuel Bottle', note: 'Check gas stops on the route'}
-          );
-        }
-
-        if (selectedActivities.includes('sightseeing')) {
-          categories['Activity Gear'].push(
-            {id: 'a_sg1', text: 'Walking Shoes'},
-            {id: 'a_sg2', text: 'Backpack'}
-          );
-        }
-
-        categories['Toiletries & Personal Care'].push(
-          {id: 't1', text: 'Toothbrush, Toothpaste & Floss'},
-          {id: 't2', text: 'Soap / Bodywash'},
-          {id: 't3', text: 'Insect Repellent'},
-          {id: 't4', text: 'First Aid Stuff (bandaid, Ibuprofen, etc)'},
-          {id: 't5', text: 'Personal Medications'}
-        );
-
-        if (isFemale) {
-          categories['Toiletries & Personal Care'].push({id: 't6', text: 'Feminine Hygiene Products'});
-        }
-
-        categories['General & Logistics'].push(
-          {id: 'g1', text: 'ID, Credit Cards & Cash'},
-          {id: 'g2', text: 'Portable Power Bank & Charging Cables'},
-          {id: 'g3', text: 'Download Offline Map'},
-          {id: 'g4', text: 'Trash Bags'},
-          {id: 'g5', text: 'Multi-tool and/or Pocket Knife'}
-        );
-
-        setGeneratedList(categories);
+        const newLists = {};
+        PROFILES.forEach(p => {
+          newLists[p.id] = buildPackingList(p, {days, activities: selectedActivities, w, saved: savedItems[p.id] || []});
+        });
+        setLists(newLists);
         setCheckedItems({});
+        setLoadingWeather(false);
 
         setTimeout(() => {
           document.getElementById('packing-results-section')?.scrollIntoView({behavior: 'smooth'});
@@ -628,42 +761,32 @@
       const toggleCheck = (itemId) => {
         setCheckedItems(prev => ({
           ...prev,
-          [itemId]: !prev[itemId]
+          [personId]: {...(prev[personId] || {}), [itemId]: !(prev[personId] || {})[itemId]}
         }));
       };
 
-      const totalItemsCount = useMemo(() => {
-        if (!generatedList) return 0;
-        let count = 0;
-        Object.keys(generatedList).forEach(cat => {
-          count += generatedList[cat].length;
-          if (customItems[cat]) count += customItems[cat].length;
-        });
-        return count;
-      }, [generatedList, customItems]);
-
-      const checkedItemsCount = useMemo(() => {
-        return Object.values(checkedItems).filter(Boolean).length;
-      }, [checkedItems]);
-
-      const packedPercentage = totalItemsCount > 0
-        ? Math.round((checkedItemsCount / totalItemsCount) * 100)
-        : 0;
+      // Progress for any profile (used on the name tabs and the progress bar)
+      const progressFor = (pid) => {
+        const list = lists?.[pid] || {};
+        const ids = Object.values(list).flat().map(i => i.id);
+        const checked = ids.filter(id => checkedItems[pid]?.[id]).length;
+        return {total: ids.length, checked, pct: ids.length ? Math.round((checked / ids.length) * 100) : 0};
+      };
+      const progress = progressFor(personId);
+      const weatherSummary = useMemo(() => summarizeWeather(weatherData), [weatherData]);
 
       const copyToClipboard = () => {
-        if (!generatedList) return;
-        let textOutput = `🏕️ ADVENTURE PACKING LIST\nTrip: ${totalNights} nights starting ${startDate}\nStops: ${activeLocations.map(l => `${l.name} (${l.nights}n)`).join(', ')}\n\n`;
-
-        Object.keys(generatedList).forEach(cat => {
+        if (!currentList) return;
+        let textOutput = `🏕️ ${person.name.toUpperCase()}'S PACKING LIST\nTrip: ${totalNights} nights starting ${startDate}\nStops: ${activeLocations.map(l => `${l.name} (${l.nights}n)`).join(', ')}\n\n`;
+        Object.keys(currentList).forEach(cat => {
+          if (!currentList[cat].length) return;
           textOutput += `=== ${cat.toUpperCase()} ===\n`;
-          const allCatItems = [...generatedList[cat], ...(customItems[cat] || [])];
-          allCatItems.forEach(item => {
-            const isChecked = checkedItems[item.id] ? '[x]' : '[ ]';
-            textOutput += `${isChecked} ${item.text} (${item.note})\n`;
+          currentList[cat].forEach(item => {
+            const isChecked = checkedItems[personId]?.[item.id] ? '[x]' : '[ ]';
+            textOutput += `${isChecked} ${item.text}${item.note ? ` (${item.note})` : ''}\n`;
           });
           textOutput += `\n`;
         });
-
         navigator.clipboard.writeText(textOutput);
         setCopiedNotification(true);
         setTimeout(() => setCopiedNotification(false), 2500);
@@ -765,8 +888,9 @@
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
                       Who's Packing?
                     </label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {FAMILY.map(p => {
+                    <p className="text-xs text-slate-500 -mt-1 mb-3">Lists are made for everyone at once. Tap a name to see theirs.</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {PROFILES.map(p => {
                         const isSelected = personId === p.id;
                         return (
                           <div key={p.id} className="relative">
@@ -778,14 +902,16 @@
                                 : 'bg-slate-900/60 border-slate-700'
                                 }`}
                             >
-                              <div className={`w-16 h-16 rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-2xl font-bold text-slate-300 ${isSelected ? 'ring-2 ring-emerald-400' : ''}`}>
-                                {photos[p.id]
-                                  ? <img src={photos[p.id]} alt={p.name} className="w-full h-full object-cover" />
-                                  : p.name[0]}
+                              <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-2xl font-bold text-slate-300 ${isSelected ? 'ring-2 ring-emerald-400' : ''}`}>
+                                {p.shared
+                                  ? <Icon name="Users" className="w-7 h-7" />
+                                  : photos[p.id]
+                                    ? <img src={photos[p.id]} alt={p.name} className="w-full h-full object-cover" />
+                                    : p.name[0]}
                               </div>
                               <span className={`text-sm font-semibold ${isSelected ? 'text-emerald-300' : 'text-slate-300'}`}>{p.name}</span>
                             </button>
-                            <label
+                            {!p.shared && <label
                               title={`${photos[p.id] ? 'Change' : 'Add'} ${p.name}'s photo`}
                               className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-slate-900/90 border border-slate-600 text-slate-300 cursor-pointer hover:text-emerald-300"
                             >
@@ -799,7 +925,7 @@
                                   e.target.value = '';
                                 }}
                               />
-                            </label>
+                            </label>}
                           </div>
                         );
                       })}
@@ -850,39 +976,81 @@
                   className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold py-4 rounded-xl shadow-lg flex items-center justify-center gap-2 text-base transition-all active:scale-[0.99] disabled:opacity-50"
                 >
                   <Icon name="Sparkles" className="w-5 h-5" />
-                  {loadingWeather ? "Fetching Forecasts..." : "Generate Smart Packing List"}
+                  {loadingWeather ? "Checking the weather..." : "Generate Packing Lists for Everyone"}
                 </button>
               </div>
             </section>
 
-            {Object.keys(weatherData).length > 0 && (
+            {weatherData.length > 0 && (
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <Icon name="Sun" className="w-4 h-4 text-amber-400" /> Weather Forecast Summary
+                  <Icon name="Sun" className="w-4 h-4 text-amber-400" /> Weather For Your Trip Dates
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {Object.entries(weatherData).map(([id, data]) => (
-                    <div key={id} className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 space-y-2">
-                      <h4 className="font-bold text-white text-sm truncate">{data.displayName}</h4>
-                      <div className="flex items-baseline justify-between pt-1">
-                        <span className="text-lg font-bold text-slate-100">{data.minTemp}° - {data.maxTemp}°F</span>
-                        <span className="text-xs font-semibold text-slate-400">{data.rainChance}% Rain</span>
+                  {weatherData.map((data, idx) => (
+                    <div key={idx} className={`bg-slate-800/80 border rounded-xl p-4 space-y-2 ${data.source === 'unavailable' ? 'border-amber-600/70' : 'border-slate-700/80'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="font-bold text-white text-sm truncate">{idx + 1}. {data.displayName}</h4>
+                        <span className="text-[11px] text-slate-400 shrink-0">
+                          {shortDate(data.from)}{data.to !== data.from ? ` – ${shortDate(data.to)}` : ''}
+                        </span>
                       </div>
+                      {data.source === 'unavailable' ? (
+                        <p className="text-xs text-amber-300">Couldn't load weather here, so rain and cold gear were added just in case.</p>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline justify-between pt-1">
+                            <span className="text-lg font-bold text-slate-100">{data.minTemp}° – {data.maxTemp}°F</span>
+                            <span className="text-xs font-semibold text-slate-400">{data.rainChance}% rain</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {data.hasSnow && <span className="text-[11px] px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-200">Snow possible</span>}
+                            {data.maxWind >= 25 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-200">Windy · {data.maxWind} mph</span>}
+                            {data.minTemp <= 32 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-200">Freezing nights</span>}
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {data.source === 'forecast' ? 'Live forecast' : `Typical weather for these dates (last ${data.years} years). Live forecast shows up about 2 weeks out.`}
+                          </p>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               </section>
             )}
 
-            {generatedList && (
+            {lists && (
               <section id="packing-results-section" className="space-y-6 pt-4 border-t border-slate-800">
+                {/* Name tabs: tap a name to switch whose list you see */}
+                <div className="grid grid-cols-4 gap-2">
+                  {PROFILES.map(p => {
+                    const pr = progressFor(p.id);
+                    const isSelected = personId === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => { setPersonId(p.id); setSavingItemId(null); }}
+                        className={`flex flex-col items-center gap-1 py-2 px-1 rounded-xl border transition-all ${isSelected ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/60 border-slate-700'}`}
+                      >
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-700 flex items-center justify-center text-base font-bold text-slate-200">
+                          {p.shared
+                            ? <Icon name="Users" className="w-5 h-5" />
+                            : photos[p.id] ? <img src={photos[p.id]} alt={p.name} className="w-full h-full object-cover" /> : p.name[0]}
+                        </div>
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-emerald-300' : 'text-slate-300'}`}>{p.name}</span>
+                        <span className="text-[10px] text-slate-500">{pr.checked}/{pr.total}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 sm:p-6 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Icon name="ShoppingBag" className="w-5 h-5 text-emerald-400" /> Your Customized Packing List
-                      </h3>
-                    </div>
+                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                      <Icon name="ShoppingBag" className="w-5 h-5 text-emerald-400" />
+                      {person.shared ? 'Family Gear (shared)' : `${person.name}'s Packing List`}
+                    </h3>
                     <button
                       onClick={copyToClipboard}
                       className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5"
@@ -892,24 +1060,27 @@
                     </button>
                   </div>
 
+                  {weatherSummary.missing.length > 0 && (
+                    <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-lg px-3 py-2">
+                      Weather couldn't load for {weatherSummary.missing.join(', ')}, so rain and cold-weather gear were added just in case.
+                    </p>
+                  )}
+
                   <div className="space-y-1.5 pt-2">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400 font-medium">Packing Progress</span>
-                      <span className="font-bold text-emerald-400">{checkedItemsCount} of {totalItemsCount} items packed ({packedPercentage}%)</span>
+                      <span className="font-bold text-emerald-400">{progress.checked} of {progress.total} items packed ({progress.pct}%)</span>
                     </div>
                     <div className="w-full bg-slate-900 rounded-full h-3 p-0.5 border border-slate-700">
-                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{width: `${packedPercentage}%`}} />
+                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{width: `${progress.pct}%`}} />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  {Object.keys(generatedList).map(catName => {
-                    const baseItems = generatedList[catName];
-                    const extraItems = customItems[catName] || [];
-                    const allItems = [...baseItems, ...extraItems];
-
-                    if (allItems.length === 0) return null;
+                  {CATEGORY_ORDER.concat(Object.keys(currentList || {}).filter(c => !CATEGORY_ORDER.includes(c))).map(catName => {
+                    const allItems = currentList?.[catName] || [];
+                    if (allItems.length === 0 && person.shared && catName === 'Clothing & Apparel') return null;
 
                     return (
                       <div key={catName} className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-5 space-y-4">
@@ -917,40 +1088,80 @@
 
                         <div className="grid grid-cols-1 gap-2.5">
                           {allItems.map(item => {
-                            const isChecked = !!checkedItems[item.id];
+                            const isChecked = !!checkedItems[personId]?.[item.id];
+                            const canSave = item.custom || item.savedId;
                             return (
-                              <div
-                                key={item.id}
-                                className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${isChecked
+                              <div key={item.id} className="space-y-2">
+                                <div
+                                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${isChecked
                                     ? 'bg-slate-900/40 border-slate-800 text-slate-500'
                                     : 'bg-slate-900/80 border-slate-700 text-slate-200'
-                                  }`}
-                              >
-                                {/* Checkbox & Item Text */}
-                                <div
-                                  onClick={() => toggleCheck(item.id)}
-                                  className="flex-1 cursor-pointer flex items-center gap-2"
+                                    }`}
                                 >
-                                  <span className={`text-sm font-medium ${isChecked ? 'line-through' : ''}`}>
-                                    {item.text}
-                                  </span>
+                                  <div onClick={() => toggleCheck(item.id)} className="flex-1 cursor-pointer flex items-start gap-3">
+                                    <span className={`mt-0.5 w-5 h-5 shrink-0 rounded-md border flex items-center justify-center ${isChecked ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-500'}`}>
+                                      {isChecked && <Icon name="Check" className="w-3.5 h-3.5" />}
+                                    </span>
+                                    <span>
+                                      <span className={`text-sm font-medium ${isChecked ? 'line-through' : ''}`}>{item.text}</span>
+                                      {item.savedId && (
+                                        <span className="block text-[11px] text-emerald-400">Saved for {activityName(item.savedFor)}</span>
+                                      )}
+                                      {item.note && !item.savedId && (
+                                        <span className="block text-[11px] text-slate-500">{item.note}</span>
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  {canSave && (
+                                    <button
+                                      type="button"
+                                      onClick={() => (item.savedId ? unsaveItem(catName, item) : setSavingItemId(savingItemId === item.id ? null : item.id))}
+                                      className={`p-1 transition-colors ${item.savedId ? 'text-emerald-400 hover:text-slate-400' : 'text-slate-500 hover:text-emerald-400'}`}
+                                      title={item.savedId ? 'Remove from saved items' : `Always pack this for ${person.name}`}
+                                    >
+                                      <Icon name={item.savedId ? 'BookmarkCheck' : 'BookmarkPlus'} className="w-4 h-4" />
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteItem(catName, item.id)}
+                                    className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                                    title="Remove from this trip"
+                                  >
+                                    <Icon name="Trash2" className="w-4 h-4" />
+                                  </button>
                                 </div>
 
-                                {/* Delete Trash Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteItem(catName, item.id)}
-                                  className="text-slate-500 hover:text-red-400 p-1 transition-colors"
-                                  title="Remove item"
-                                >
-                                  <Icon name="Trash2" className="w-4 h-4" />
-                                </button>
+                                {savingItemId === item.id && (
+                                  <div className="ml-3 p-3 rounded-xl bg-slate-900 border border-emerald-700/60 space-y-2">
+                                    <p className="text-xs text-slate-300">
+                                      Always add "<b>{item.text}</b>" to {person.shared ? 'Family Gear' : `${person.name}'s list`} for:
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {['always', ...selectedActivities].map(act => (
+                                        <button
+                                          key={act}
+                                          type="button"
+                                          onClick={() => saveItem(catName, item, act)}
+                                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 border border-emerald-600 text-emerald-300 hover:bg-emerald-500/30"
+                                        >
+                                          {activityName(act)}
+                                        </button>
+                                      ))}
+                                      <button type="button" onClick={() => setSavingItemId(null)} className="px-3 py-1.5 rounded-lg text-xs text-slate-400 border border-slate-700">
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
+                          {allItems.length === 0 && <p className="text-xs text-slate-500 italic">Nothing here yet.</p>}
                         </div>
 
-                        {/* Inline "Add Item" Row */}
                         <div className="flex gap-2 pt-2">
                           <input
                             type="text"
@@ -968,6 +1179,9 @@
                             Add
                           </button>
                         </div>
+                        {catName === CATEGORY_ORDER[0] && (
+                          <p className="text-[11px] text-slate-500 -mt-1">Tip: after adding an item, tap the bookmark to always pack it for {person.shared ? 'the family' : person.name}.</p>
+                        )}
                       </div>
                     );
                   })}
