@@ -8,12 +8,12 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
   <!-- Babel for parsing React/JSX -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@8.1.1/babel.min.js"></script>
   <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@1.71.0"></script>
   <!-- Leaflet (interactive map for picking destinations) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -40,8 +40,10 @@
       useEffect(() => {
         if (iconRef.current && window.lucide) {
           iconRef.current.innerHTML = '';
-          const iconNode = window.lucide.createElement(window.lucide.icons[name] || window.lucide.icons[fallback] || window.lucide.icons.HelpCircle);
-          iconRef.current.appendChild(iconNode);
+          const icons = window.lucide.icons || {};
+          const def = icons[name] || icons[fallback] || icons.CircleHelp || icons.HelpCircle;
+          if (!def) return; // unknown icon: show nothing rather than break the page
+          iconRef.current.appendChild(window.lucide.createElement(def));
           if (className) {
             const svg = iconRef.current.querySelector('svg');
             if (svg) svg.setAttribute('class', className);
@@ -579,15 +581,23 @@
       return cats;
     };
 
+    // Read a saved value from this device, falling back if it's missing or unreadable
+    const loadStored = (key, fallback) => {
+      try {
+        const v = JSON.parse(localStorage.getItem(key));
+        return v ?? fallback;
+      } catch (e) {
+        return fallback;
+      }
+    };
+
     function App() {
-      // --- FORM STATE ---
-      const [startDate, setStartDate] = useState(() => {
-        const today = new Date();
-        return today.toISOString().split('T')[0];
-      });
+      // --- FORM STATE (kept on this device so a reload doesn't lose the trip) ---
+      const storedForm = useMemo(() => loadStored('pocketpath_form', {}), []);
+      const [startDate, setStartDate] = useState(() => storedForm.startDate || localToday());
 
       // Each stop: {id, name, lat, lon, nights}
-      const [locations, setLocations] = useState([]);
+      const [locations, setLocations] = useState(() => (Array.isArray(storedForm.locations) ? storedForm.locations : []));
 
       const [personId, setPersonId] = useState(FAMILY[0].id);
       const person = PROFILES.find(p => p.id === personId) || FAMILY[0];
@@ -632,23 +642,27 @@
         };
         reader.readAsDataURL(file);
       };
-      const [selectedActivities, setSelectedActivities] = useState(['hike', 'camping']);
+      const [selectedActivities, setSelectedActivities] = useState(() =>
+        Array.isArray(storedForm.activities) ? storedForm.activities : ['hike', 'camping']
+      );
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('pocketpath_form', JSON.stringify({startDate, locations, activities: selectedActivities}));
+        } catch (e) {
+          console.error('Could not save trip details', e);
+        }
+      }, [startDate, locations, selectedActivities]);
 
       // --- WEATHER & LIST STATE ---
       // Lists, check marks, and saved items are kept on this device between visits
-      const loadStored = (key, fallback) => {
-        try {
-          const v = JSON.parse(localStorage.getItem(key));
-          return v ?? fallback;
-        } catch (e) {
-          return fallback;
-        }
-      };
       const [weatherData, setWeatherData] = useState(() => loadStored('pocketpath_weather', []));
       const [loadingWeather, setLoadingWeather] = useState(false);
       const [lists, setLists] = useState(() => loadStored('pocketpath_lists', null)); // {profileId: {category: [items]}}
       const [checkedItems, setCheckedItems] = useState(() => loadStored('pocketpath_checked', {})); // {profileId: {itemId: true}}
       const [savedItems, setSavedItems] = useState(() => loadStored('pocketpath_saved_items', {})); // {profileId: [{id, text, category, activity}]}
+      // The trip the current lists were generated for: {startDate, locations, activities}
+      const [listTrip, setListTrip] = useState(() => loadStored('pocketpath_list_trip', null));
       const [newItemText, setNewItemText] = useState({});
       const [savingItemId, setSavingItemId] = useState(null);
       const [copiedNotification, setCopiedNotification] = useState(false);
@@ -659,10 +673,15 @@
           localStorage.setItem('pocketpath_checked', JSON.stringify(checkedItems));
           localStorage.setItem('pocketpath_saved_items', JSON.stringify(savedItems));
           localStorage.setItem('pocketpath_weather', JSON.stringify(weatherData));
+          localStorage.setItem('pocketpath_list_trip', JSON.stringify(listTrip));
         } catch (e) {
           console.error('Could not save lists', e);
         }
-      }, [lists, checkedItems, savedItems, weatherData]);
+      }, [lists, checkedItems, savedItems, weatherData, listTrip]);
+
+      // Details of the trip the lists belong to (older saved lists fall back to the form)
+      const tripForLists = listTrip || {startDate, locations, activities: selectedActivities};
+      const tripNights = tripForLists.locations.reduce((s, l) => s + (parseInt(l.nights, 10) || 0), 0);
 
       const activeLocations = locations;
 
@@ -747,10 +766,30 @@
         const days = Math.max(1, totalTripDays);
         const newLists = {};
         PROFILES.forEach(p => {
-          newLists[p.id] = buildPackingList(p, {days, activities: selectedActivities, w, saved: savedItems[p.id] || []});
+          const list = buildPackingList(p, {days, activities: selectedActivities, w, saved: savedItems[p.id] || []});
+          // Carry over items you added by hand for this trip (unless the new list already has them)
+          const old = lists?.[p.id] || {};
+          Object.entries(old).forEach(([cat, items]) => {
+            items.filter(i => i.custom && !i.savedId).forEach(i => {
+              const dup = Object.values(list).some(l => l.some(x => x.text.toLowerCase() === i.text.toLowerCase()));
+              if (!dup) list[cat] = [...(list[cat] || []), i];
+            });
+          });
+          newLists[p.id] = list;
+        });
+        // Keep checkmarks for items that are still on the new lists
+        setCheckedItems(prev => {
+          const next = {};
+          Object.entries(newLists).forEach(([pid, list]) => {
+            const ids = new Set(Object.values(list).flat().map(i => i.id));
+            Object.keys(prev[pid] || {}).forEach(id => {
+              if (prev[pid][id] && ids.has(id)) (next[pid] = next[pid] || {})[id] = true;
+            });
+          });
+          return next;
         });
         setLists(newLists);
-        setCheckedItems({});
+        setListTrip({startDate, locations: activeLocations, activities: selectedActivities});
         setLoadingWeather(false);
 
         setTimeout(() => {
@@ -777,7 +816,7 @@
 
       const copyToClipboard = () => {
         if (!currentList) return;
-        let textOutput = `🏕️ ${person.name.toUpperCase()}'S PACKING LIST\nTrip: ${totalNights} nights starting ${startDate}\nStops: ${activeLocations.map(l => `${l.name} (${l.nights}n)`).join(', ')}\n\n`;
+        let textOutput = `🏕️ ${person.name.toUpperCase()}'S PACKING LIST\nTrip: ${tripNights} night${tripNights === 1 ? '' : 's'} starting ${shortDate(tripForLists.startDate)}\nStops: ${tripForLists.locations.map(l => `${l.name} (${l.nights}n)`).join(', ')}\n\n`;
         Object.keys(currentList).forEach(cat => {
           if (!currentList[cat].length) return;
           textOutput += `=== ${cat.toUpperCase()} ===\n`;
@@ -1140,7 +1179,7 @@
                                       Always add "<b>{item.text}</b>" to {person.shared ? 'Family Gear' : `${person.name}'s list`} for:
                                     </p>
                                     <div className="flex flex-wrap gap-2">
-                                      {['always', ...selectedActivities].map(act => (
+                                      {['always', ...tripForLists.activities].map(act => (
                                         <button
                                           key={act}
                                           type="button"
@@ -1198,5 +1237,3 @@
 </body>
 
 </html>
-
-```
